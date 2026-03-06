@@ -6,11 +6,9 @@
 long unsigned int rxId; // хранилище ИД из CAN
 unsigned char len = 0; // хранилище длины данных из CAN
 unsigned char rxBuf[8]; // хранилище массива данных из CAN
-char msgString[128];                        // Array to store serial string (строка для вывода в порт монитора)
-#define CAN0_INT 3                              // Set INT to pin 3
+char msgString[128];    // Array to store serial string (строка для вывода в порт монитора)
+#define CAN0_INT 3      // Set INT to pin 3
 char msgCodeCanDscr[20]; // переменная жля описание кода Веюасто
-
-
 
 
 MCP_CAN CAN0(9);     // Set CS to pin 9
@@ -28,12 +26,8 @@ void setup()
 
   CAN0.setMode(MCP_NORMAL);   // Выбираем нормальный режии, чтобы разрешить отправку сообщений
 
-
-  
   pinMode(CAN0_INT, INPUT);                            // Configuring pin for /INT input
 }
-
-
 
 
 // Функция вывода принятых сообщений в монитор порта
@@ -56,7 +50,6 @@ void msgToMonitor(char msgCodeCanDscr[40]){
 
 
 
-
 void loop()
 {
 
@@ -66,9 +59,9 @@ void loop()
         CAN0.readMsgBuf(&rxId, &len, rxBuf);*/
     
     // 1.2 Код из примера библиотеки
-     if(!digitalRead(CAN0_INT))                         // Если вывод CAN0_INT is LOW, считываем буфер приема
+     if(!digitalRead(CAN0_INT))          // Если вывод CAN0_INT is LOW, считываем буфер приема
   {
-    CAN0.readMsgBuf(&rxId, &len, rxBuf);      // Считывем данные: len = длина данных, buf = байт(ы) данных
+    CAN0.readMsgBuf(&rxId, &len, rxBuf);  // Считывем данные: len = длина данных, buf = байт(ы) данных
 
 
         // 2.1 ОБРАБОТКА ID 427 (Запросы от котла)
@@ -76,7 +69,7 @@ void loop()
                           switch(rxBuf[0]) {
                               case 0x07:{
                                     switch(rxBuf[1])
-                                    {
+                                        {
                                           case 0x01: {
                                                       byte ackStat1[] = {0x00, 0x71, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
                                                       CAN0.sendMsgBuf(0x427, 0, 8, ackStat1);
