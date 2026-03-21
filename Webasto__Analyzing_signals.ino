@@ -9,7 +9,7 @@ unsigned char rxBuf[8]; // хранилище массива данных из C
 char msgString[128];    // Array to store serial string (строка для вывода в порт монитора)
 #define CAN0_INT 3      // Set INT to pin 3
 char msgCodeCanDscr[20]; // переменная для описание кода Вебасто
-byte askStat1[] = {0x00, 0x71, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00} // ответ для вебасто (есть связь?)
+byte askStat1[8] = {0x00, 0x71, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00} // ответ для вебасто (есть связь?)
 
 
 MCP_CAN CAN0(9);     // Set CS to pin 9
