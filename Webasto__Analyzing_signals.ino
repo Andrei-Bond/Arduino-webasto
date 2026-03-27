@@ -47,6 +47,113 @@ void msgToMonitor(char msgCodeCanDscr[40]){
 }
 
 
+//Управление по W-bus
+
+#include <wire.h>
+//#include <liquidcrystal_I2C.h>
+//LiquidCrystal_I2C lcd(0x27,16,2);
+
+byte Init1[] = {0x81, 0x51, 0xF1, 0x81, 0x44};
+byte Init2[] = {0x82, 0x51, 0xF1, 0x3C, 0x00, 0x00};
+byte Request1[] = {0x83, 0x51, 0xF1, 0x2A, 0x01, 0x01, 0xF1};
+byte Request2[] = {0x83, 0x51, 0xF1, 0x2A, 0x01, 0x02, 0xF2};
+byte Request3[] = {0x83, 0x51, 0xF1, 0x2A, 0x01, 0x05, 0xF5};
+byte Wakeup[] = {0x81, 0x51, 0xF1, 0xA1, 0x64};
+byte StartWebasto[] = {0x83, 0x51, 0xF1, 0x31, 0x22, 0xFF, 0x17};
+byte StopWebasto[] = {0x83, 0x51, 0xF1, 0x31, 0x22, 0x00, 0x18};
+byte Answer[18]; // вообще говоря, в ответе 11 байт. Но ещё 7 байт придут перед ответом, это сам запрос, т.к. в протоколе K-Line присутствует эхо
+float voltage = 0.00;
+int temperature = 0;
+
+void setup() {
+
+Serial.begin(9600);
+
+pinMode(18, OUTPUT); // TX1
+
+// Пробуждение Webasto?
+digitalWrite(18, LOW);
+delay(300);
+digitalWrite(18, HIGH);
+delay(50);
+digitalWrite(18, LOW);
+delay(25);
+digitalWrite(18, HIGH);
+
+delay(3025);
+Serial1.begin(10400);
+
+Serial1.write(Init1, 5);
+delay(40);
+
+while(Serial1.available() > 0) {
+Serial1.read();
+}
+
+delay(120);
+
+Serial1.write(Init2, 6);
+delay(40);
+
+while(Serial1.available() > 0) {
+Serial1.read();
+}
+
+delay(120);
+
+//lcd.init();
+//lcd.backlight();
+
+}
+
+void loop() {
+
+Serial1.write(Wakeup, 5);
+delay(40);
+
+while(Serial1.available() > 0) {
+Serial1.read();
+delay(50);
+}
+
+Serial1.write(Request1, 7);
+delay(40);
+
+while(Serial1.available() > 0) {
+for(int i = 0; i < 18; i++) {
+
+Answer[i] = Serial1.read();
+delay(10);
+
+}
+}
+
+for(int i = 7; i < 18; i++)
+{
+Serial.print(Answer[i], HEX);
+Serial.print(' ');
+}
+
+Serial.println(' ');
+
+if (Answer[7] == 0x87) {
+temperature = (222 — Answer[12]) / 1.77;
+voltage = Answer[14] / 14.5;
+}
+/*
+lcd.clear();
+lcd.setCursor(0,0);
+lcd.print("Temp:");
+lcd.setCursor(5,0);
+lcd.print(temperature);
+lcd.setCursor(0,1);
+lcd.print("Volt:");
+lcd.setCursor(5,1);
+lcd.print(voltage);
+*/
+delay(100);
+}
+
 
 
 
