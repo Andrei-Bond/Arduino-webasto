@@ -418,18 +418,18 @@ void loop()
     
                           
      // 3. ФОНОВАЯ ЭМУЛЯЦИЯ (раз в 100мс шлем статус авто, чтобы котел не «отвалился»)
-    static unsigned long lastTime = 0;
-    if (millis() - lastTime > 100) {
-        lastTime = millis();
+    //static unsigned long lastTime = 0;
+   // if (millis() - lastTime > 100) {
+  //      lastTime = millis();
        //byte msg427[8] = {0x00, 0x71, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}; //Без этого выдаёт ошибку
       // CAN0.sendMsgBuf(0x427, 0, 8, msg427);
 
 
-       if((digitalRead(BTN_PIN) == LOW)) {
-       }
-    }   
+    //   if((digitalRead(BTN_PIN) == LOW)) {
+   //    }
+  //  }   
     
-    // Блок управления по W-bus вариант от Gemini
+    // 4. Блок управления по W-bus, вариант от Gemini
 
   // Если Webasto запущена, нужно раз в 5-10 сек слать запрос, 
   // чтобы штатный котел Touareg не уснул (Keep-alive)
