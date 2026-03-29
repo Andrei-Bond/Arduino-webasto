@@ -6,7 +6,7 @@
 #include <CustomSoftwareSerial.h> // Библиотека для 8E1 на программных пинах для w-bus
 // Пины для K-Line адаптера
 #define WBUS_RX 8
-#define WBUS_TX 10
+#define WBUS_TX 9
 
 // Адресация: Таймер (F) -> Котел (4) w-bus
 #define ADDR_HEATER 0x4F 
@@ -24,19 +24,19 @@ unsigned char len = 0; // хранилище длины данных из CAN
 unsigned char rxBuf[8]; // хранилище массива данных из CAN
 char msgString[128];    // Array to store serial string (строка для вывода в порт монитора)
 #define CAN0_INT 3      // Set INT to pin 3
-char msgCodeCanDscr[20]; // переменная для описание кода Вебасто
+char msgCodeCanDscr[20]; // переменная для описания кода Вебасто
 byte askStat1[8] = {0x00, 0x71, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}; // ответ для вебасто (есть связь?)
 
 
-MCP_CAN CAN0(9);     // Set CS to pin 9
-const int BTN_PIN = 2;     // Пин, к которому подключена кнопка запуска
+MCP_CAN CAN0(10);     // Set CS to pin 10
+// const int BTN_PIN = 2;     // Пин, к которому подключена кнопка запуска
 //unsigned long lastSendTime = 0; // Время последней отправки пакетов "жизни"
-const int sendInterval = 500;   // Интервал отправки пакетов (500 мс)
+// const int sendInterval = 500;   // Интервал отправки пакетов (500 мс) CAN
 
 void setup()
 {
   Serial.begin(115200);
-  pinMode(BTN_PIN, INPUT_PULLUP); // Подтягиваем + к пину кнопки, что бы не зависала
+  // pinMode(BTN_PIN, INPUT_PULLUP); // Подтягиваем + к пину кнопки, что бы не зависала
   // Initialize MCP2515 running at 8MHz with a baudrate of 100kb/s and the masks and filters disabled.
   if(CAN0.begin(MCP_ANY, CAN_100KBPS, MCP_8MHZ) == CAN_OK) Serial.println("MCP2515 Инициализирован успешно!");
   else Serial.println("Ошибка инициализации MCP2515...");
