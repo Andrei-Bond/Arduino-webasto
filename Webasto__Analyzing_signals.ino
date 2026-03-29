@@ -52,7 +52,7 @@ void setup()
 }
 
 
-// Функция вывода принятых сообщений в монитор порта
+// Функция вывода принятых сообщений CAN в монитор порта
 void msgToMonitor(char msgCodeCanDscr[40]){
 
       sprintf(msgString, "%s ID: 0x%.3lX Data:", msgCodeCanDscr, rxId);
