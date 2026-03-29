@@ -22,7 +22,8 @@ unsigned char len = 0; // хранилище длины данных из CAN
 unsigned char rxBuf[8]; // хранилище массива данных из CAN
 
 #define CAN0_INT 3      // Set INT to pin 3
-char msgCodeCanDscr[20]; // переменная для описания кода Вебасто
+
+
 byte askStat1[8] = {0x00, 0x71, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}; // ответ для вебасто (есть связь?)
 
 
