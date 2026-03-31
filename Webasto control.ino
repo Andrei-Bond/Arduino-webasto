@@ -1,4 +1,4 @@
-// Webasto CAN simulation + w-bus
+// Webasto CAN simulation + w-bus + pump relay + control pump
 
 #include <mcp_can.h>
 #include <SPI.h>
@@ -10,6 +10,9 @@
 #define FAN_PWM_PIN 9   // ШИМ вентилятора, здесь будет строго 400 Гц
 #define PUMP_RELAY 5       // Реле помпы
 #define CLIMATE_RELAY 4    // Реле переключения климата (2 Питания + Сигнал климата)
+#define ERR_LED      A1     // Светодиод ошибки (Аналоговый пин как цифровой)
+#define CURRENT_PIN  A0     // Датчик тока ACS712
+
 
 // Адресация: Таймер (F) -> Котел (4) w-bus
 #define ADDR_HEATER 0x4F 
@@ -33,6 +36,8 @@ int coolantTemp = 0;
 bool isRunning = false;
 unsigned long lastQuery = 0;
 bool wbusPumpState = false;
+bool systemHalted = false;
+
 
 void setup()
 {
@@ -51,14 +56,16 @@ void setup()
   
   Serial.println("W-Bus Control Ready");
   
-  // Настройки для вентилятора и помпы
+  // Настройки для вентилятора, помпы и светодиода ошибки помпы
   pinMode(PUMP_RELAY, OUTPUT);
   pinMode(CLIMATE_RELAY, OUTPUT);
+  pinMode(ERR_LED, OUTPUT);
   
   // Выключаем всё (инверсная логика реле: HIGH = выкл)
   digitalWrite(PUMP_RELAY, HIGH); 
   digitalWrite(CLIMATE_RELAY, HIGH);
-  
+  digitalWrite(ERR_LED, LOW);      // Ошибки нет
+
   // --- НАСТРОЙКА ТАЙМЕРА 1 НА 400 Гц (Пин 9) ---
   pinMode(FAN_PWM_PIN, OUTPUT);
   TCCR1A = _BV(COM1A1) | _BV(WGM11);            // Режим Fast PWM, TOP в ICR1
@@ -129,7 +136,8 @@ void setFanDuty(int percent) {
 
 void manageClimateControl() {
   if (!isRunning) {
-    setFanDuty(0);
+    //setFanDuty(0); //следующая строчка работает надёжнее?
+    OCR1A = 0;
     digitalWrite(CLIMATE_RELAY, HIGH)
     return;
   }
@@ -171,9 +179,49 @@ void parseWBusStatus() {
 }
 
 
+void checkPumpHealth() {
+  static unsigned long motorTimer = 0;
+  if (motorTimer == 0) motorTimer = millis();
+
+  if (millis() - motorTimer > 3000) {
+    float current = readCurrent();
+    // VAG помпа ест ~0.8-1.2A. Границы: 0.4 - 3.0A
+    if (current < 0.4 || current > 3.0) {
+      emergencyStop();
+    }
+  }
+}
+
+float readCurrent() {
+  long sum = 0;
+  for(int i=0; i<10; i++) sum += analogRead(CURRENT_PIN);
+  float voltage = (sum / 10.0 * 5.0) / 1024.0;
+  return abs(voltage - 2.5) / 0.185; // Для ACS712-05B
+}
+
+
+void emergencyStop() {
+  byte stopCmd[] = {0x21, 0x00};
+  sendExtended(stopCmd, 2); // СТОП в Вебасто
+  
+  digitalWrite(PUMP_RELAY, HIGH);
+  digitalWrite(CLIMATE_RELAY, HIGH);
+  //setFanDuty(0); //следующая строчка работает надёжнее?
+  OCR1A = 0;
+  
+  systemHalted = true;
+  digitalWrite(ERR_LED, HIGH);
+  Serial.println("!!! PUMP ERROR - SYSTEM STOPPED !!!");
+}
+
+void blinkError() {
+  digitalWrite(ERR_LED, !digitalRead(ERR_LED));
+  delay(500);
+}
+
+
 void loop()
 {
-
     // 1. ЧИТАЕМ ШИНУ CAN
     
      if(!digitalRead(CAN0_INT))          // Если вывод CAN0_INT is LOW, отправляем подтверждение связи
@@ -201,12 +249,14 @@ void loop()
     sendWBusQuery(0x05); // Запрос статуса
     lastQuery = millis();
   }
-  //  Прямое управление реле помпы по статусу из шины
+  //  Прямое управление реле помпы по статусу из шины + контроль работы
   if (wbusPumpState) {
     digitalWrite(PUMP_RELAY, LOW);  // Включаем реле (помпа качает)
+    checkPumpHealth();
   } else {
     digitalWrite(PUMP_RELAY, HIGH); // Выключаем реле
   }
+
   
 manageClimateControl();
 
