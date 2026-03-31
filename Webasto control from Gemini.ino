@@ -1,185 +1,149 @@
-#include <CustomSoftwareSerial.h> // Библиотека для 8E1 (четности) на программных пинах
-#include <SPI.h>                  // Для связи с MCP2515 (CAN-модуль)
+#include <CustomSoftwareSerial.h>
+#include <SPI.h>
+// #include <mcp_can.h> // Раскомментируй и используй свою библиотеку
 
-/* --- НАЗНАЧЕНИЕ ПИНОВ (Arduino Nano) --- */
-#define WBUS_RX      6      // К K-Line адаптеру (RX)
-#define WBUS_TX      7      // К K-Line адаптеру (TX)
-#define FAN_PWM_PIN  9      // Управление вентилятором (Таймер 1, строго 400 Гц)
-#define PUMP_RELAY   5      // Реле включения помпы
-#define CLIMATE_RELAY 4     // Реле перехвата управления (Климат Авто <-> Ардуино)
-#define ERR_LED      A1     // Светодиод ошибки (Аналоговый пин в режиме выхода)
-#define CURRENT_PIN  A0     // Датчик тока ACS712 или Шунт
+// --- ПИНЫ ---
+#define WBUS_RX      6
+#define WBUS_TX      7
+#define FAN_PWM_PIN  9      // Таймер 1 (400 Гц)
+#define PUMP_RELAY   5      
+#define CLIMATE_RELAY 4     
+#define ERR_LED      A1     
+#define CURRENT_PIN  A0     
+#define CAN_INT      2      // Прерывание MCP2515
 
-/* --- ПАРАМЕТРЫ СИСТЕМЫ --- */
-#define ADDR_HEATER  0x4F   // Адрес Webasto в шине W-Bus
-const float CUR_MIN = 0.4;  // Минимальный ток помпы (А) - ниже значит обрыв
-const float CUR_MAX = 3.0;  // Максимальный ток помпы (А) - выше значит заклинивание
+#define ADDR_HEATER  0x4F
 
-/* --- ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ --- */
 CustomSoftwareSerial wBus(WBUS_RX, WBUS_TX);
-int coolantTemp = 0;        // Температура ОЖ из Webasto
-bool wbusPumpState = false; // Статус помпы (нужна ли она сейчас котлу)
-bool systemHalted = false;  // Флаг критической ошибки (блокировка системы)
+
+int coolantTemp = 0;
+bool wbusPumpState = false; 
+bool systemHalted = false;  
 unsigned long lastWBusQuery = 0;
 unsigned long lastErrorBlink = 0;
 
 void setup() {
-  Serial.begin(9600);       // Порт для отладки (монитор порта ПК)
-  wBus.begin(2400, CSERIAL_8E1); // W-Bus работает на 2400 бод с четностью Even
+  Serial.begin(9600);
+  wBus.begin(2400, CSERIAL_8E1);
   
   pinMode(PUMP_RELAY, OUTPUT);
   pinMode(CLIMATE_RELAY, OUTPUT);
   pinMode(ERR_LED, OUTPUT);
+  pinMode(CAN_INT, INPUT); // Пин прерывания CAN
   
-  // Изначально всё выключено (High на реле обычно означает выкл)
   digitalWrite(PUMP_RELAY, HIGH);   
   digitalWrite(CLIMATE_RELAY, HIGH); 
   digitalWrite(ERR_LED, LOW);
 
-  /* НАСТРОЙКА ТАЙМЕРА 1 ДЛЯ ШИМ 400 Гц (Пин D9) */
-  // Мы настраиваем регистры процессора напрямую, чтобы получить ровно 400 Гц для Peugeot 508
+  // Настройка Таймера 1 (400 Гц на D9)
   pinMode(FAN_PWM_PIN, OUTPUT);
-  TCCR1A = _BV(COM1A1) | _BV(WGM11);            // Режим Fast PWM, выход на канал A (D9)
-  TCCR1B = _BV(WGM13) | _BV(WGM12) | _BV(CS11); // Предделитель 8
-  ICR1 = 4999;                                  // Потолок счета: (16МГц / (8 * 400Гц)) - 1
-  OCR1A = 0;                                    // Стартовое заполнение 0%
-
-  // ТУТ ИНИЦИАЛИЗАЦИЯ ВАШЕЙ MCP2515 (код опущен)
-  Serial.println("System Started. Waiting for CAN traffic...");
+  TCCR1A = _BV(COM1A1) | _BV(WGM11);
+  TCCR1B = _BV(WGM13) | _BV(WGM12) | _BV(CS11);
+  ICR1 = 4999; 
+  OCR1A = 0; 
+  
+  // Тут твоя инициализация CAN: CAN.begin(...);
 }
 
 void loop() {
-  /* --- 1. ЛОГИКА CAN-ШИНЫ (MCP2515) --- */
-  // Если в CAN-шине есть любая активность (котел проснулся)
-  /* if (CAN.checkReceive() == CAN_MSGAVAIL) {
-      // Читаем сообщение, чтобы очистить буфер
-      long unsigned int rxId; unsigned char len = 0; unsigned char rxBuf[8];
-      CAN.readMsgBuf(&rxId, &len, rxBuf);
-
-      // Как только видим активность — опрашиваем W-Bus (раз в 3 сек)
-      if (millis() - lastWBusQuery > 3000) {
-        sendWBus(0x05); // Запрос состояния (Query)
-        lastWBusQuery = millis();
-      }
-  } */
-
-  /* --- 2. ПАРСИНГ ОТВЕТА ИЗ W-BUS --- */
-  if (wBus.available() > 0) {
-    parseWBus(); // Извлекаем температуру и статус помпы
+  // --- 1. ЛОГИКА CAN (MCP2515) ---
+  if (!digitalRead(CAN_INT)) { 
+    // Читаем CAN, отвечаем котлу (твой код)
+    // Как только есть активность — планируем опрос W-Bus
+    if (millis() - lastWBusQuery > 3000) {
+      sendWBus(0x05); 
+      lastWBusQuery = millis();
+    }
   }
 
-  /* --- 3. ЛОГИКА БЕЗОПАСНОСТИ И УПРАВЛЕНИЯ --- */
+  // --- 2. НЕБЛОКИРУЮЩЕЕ ЧТЕНИЕ W-BUS ---
+  checkWBusSerial(); 
+
+  // --- 3. ЛОГИКА БЕЗОПАСНОСТИ ---
   if (!systemHalted) {
-    // Если котел по W-Bus требует работу помпы
     if (wbusPumpState) {
-      digitalWrite(PUMP_RELAY, LOW); // Включаем физическое реле
-      checkPumpHealth();             // Сразу проверяем ток (защита)
+      digitalWrite(PUMP_RELAY, LOW); 
+      checkPumpHealth();             
     } else {
       digitalWrite(PUMP_RELAY, HIGH);
     }
-
-    // Управление климатом (вентилятором)
     manageClimate();
   } 
   else {
-    /* РЕЖИМ АВАРИИ (Помпа неисправна) */
-    // Если котел запущен (например, сигнализацией), а помпа мертва — шлем СТОП
-    if (wbusPumpState) { 
-      sendExtended((byte[]){0x21, 0x00}, 2); // Команда STOP в Webasto
-      Serial.println("SAFETY: Webasto STOP sent due to Pump Error!");
-    }
+    // АВАРИЙНЫЙ РЕЖИМ: Блокируем пуск, если помпа мертва
+    if (wbusPumpState) sendExtended((byte[]){0x21, 0x00}, 2);
     
-    // Мигаем светодиодом ошибки без остановки основного цикла
     if (millis() - lastErrorBlink > 300) {
       digitalWrite(ERR_LED, !digitalRead(ERR_LED));
       lastErrorBlink = millis();
     }
-
-    // Силовое обесточивание всех систем
     digitalWrite(PUMP_RELAY, HIGH);
     digitalWrite(CLIMATE_RELAY, HIGH);
-    OCR1A = 0; 
+    OCR1A = 0;
   }
 }
 
-/* --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ --- */
+// --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 
-// Установка скорости вентилятора (0-100%)
-void setFanDuty(int percent) {
-  if (percent < 0) percent = 0;
-  if (percent > 100) percent = 100;
-  OCR1A = map(percent, 0, 100, 0, 4999); // Перевод процентов в диапазон таймера
+void checkWBusSerial() {
+  static byte buf[20];
+  static int idx = 0;
+  static unsigned long timeout = 0;
+
+  while (wBus.available()) {
+    buf[idx++] = wBus.read();
+    timeout = millis();
+    if (idx >= 20) break;
+  }
+
+  if (idx > 0 && (millis() - timeout > 10)) {
+    if (idx > 7 && (buf[0] == 0x4F || buf[0] == 0xF4)) {
+      coolantTemp = buf[4] - 50;
+      wbusPumpState = (buf[6] & 0x02) || (buf[6] & 0x01);
+    }
+    idx = 0;
+  }
 }
 
-// Управление климатом Peugeot 508
 void manageClimate() {
   if (coolantTemp > 40) {
-    digitalWrite(CLIMATE_RELAY, LOW); // Переключаем реле на Ардуино
-    setFanDuty(70);                  // ШИМ 400Гц, заполнение 70% (Low Side)
+    digitalWrite(CLIMATE_RELAY, LOW);
+    OCR1A = 3500; // 70% от 4999
   } else {
-    digitalWrite(CLIMATE_RELAY, HIGH); // Возвращаем управление штатному климату
-    setFanDuty(0);
+    digitalWrite(CLIMATE_RELAY, HIGH);
+    OCR1A = 0;
   }
 }
 
-// Проверка исправности помпы по току
 void checkPumpHealth() {
-  static unsigned long pumpTimer = 0;
-  if (pumpTimer == 0) pumpTimer = millis();
-
-  if (millis() - pumpTimer > 3000) { // Пропускаем пусковой ток (3 сек)
+  static unsigned long pTimer = 0;
+  if (pTimer == 0) pTimer = millis();
+  if (millis() - pTimer > 3000) {
     float amps = readAmps();
-    if (amps < CUR_MIN || amps > CUR_MAX) {
-      systemHalted = true; // Уходим в необратимую ошибку
-      Serial.print("PUMP FAILURE! Amps: "); Serial.println(amps);
-    }
+    if (amps < 0.4 || amps > 3.0) systemHalted = true;
   }
 }
 
-// Чтение тока с датчика ACS712-05B
 float readAmps() {
   long sum = 0;
-  for(int i=0; i<15; i++) sum += analogRead(CURRENT_PIN);
-  float voltage = (sum / 15.0 * 5.0) / 1024.0;
-  return abs(voltage - 2.5) / 0.185; // 2.5V - центр, 185мВ - 1 Ампер
+  for(int i=0; i<10; i++) sum += analogRead(CURRENT_PIN);
+  float voltage = (sum / 10.0 * 5.0) / 1024.0;
+  return abs(voltage - 2.5) / 0.185; 
 }
 
-// Разбор пакета из W-Bus
-void parseWBus() {
-  byte b[20];
-  int len = 0;
-  while(wBus.available() && len < 20) {
-    b[len++] = wBus.read();
-    delay(2); // Ждем байты пакета
-  }
-  
-  // Пакет ответа 0x4F (котел) или 0xF4 (диагностика)
-  if (len > 7 && (b[0] == 0x4F || b[0] == 0xF4)) {
-    coolantTemp = b[4] - 50; // 5-й байт минус 50 = градусы
-    // Статус работы: проверяем биты горения (0x01) или помпы (0x02)
-    wbusPumpState = (b[6] & 0x02) || (b[6] & 0x01); 
-  }
-}
-
-// Отправка коротких команд (Query)
 void sendWBus(byte cmd) {
-  byte p[] = { ADDR_HEATER, 0x01, cmd };
-  byte crc = ADDR_HEATER ^ 0x01 ^ cmd;
-  for(int i=0; i<3; i++) wBus.write(p[i]);
+  byte p[] = { 0x4F, 0x01, cmd };
+  wBus.write(p[0]); wBus.write(p[1]); wBus.write(p[2]);
+  wBus.write(p[0] ^ p[1] ^ p[2]);
+}
+
+void sendExtended(byte* data, int len) {
+  wBus.write(0x4F); wBus.write((byte)len);
+  byte crc = 0x4F ^ (byte)len;
+  for(int i=0; i<len; i++) { wBus.write(data[i]); crc ^= data[i]; }
   wBus.write(crc);
 }
 
-// Отправка длинных команд (Start/Stop)
-void sendExtended(byte* data, int len) {
-  wBus.write(ADDR_HEATER);
-  wBus.write((byte)len);
-  byte crc = ADDR_HEATER ^ (byte)len;
-  for(int i=0; i<len; i++) {
-    wBus.write(data[i]);
-    crc ^= data[i];
-  }
-  wBus.write(crc);
-}
 
 /*
 Итоговые рекомендации и нюансы:
@@ -190,5 +154,17 @@ void sendExtended(byte* data, int len) {
 Питание системы: В Peugeot 508 и Touareg 2008 очень "шумное" бортовое питание. Питать Arduino Nano лучше через качественный DC-DC преобразователь (например, на базе MP1584), настроенный на 5В, а не через пин VIN.
 Индексы байт: После первого запуска обязательно включи HEX-дамп (который мы обсуждали) и убедись, что в твоей версии Webasto температура и статус помпы находятся именно в 5-м и 7-м байтах. У штатных VAG котлов это стандарт, но иногда бывают исключения.
 Безопасность CAN: Поскольку ты читаешь CAN, чтобы активировать W-Bus, убедись, что твой модуль MCP2515 имеет общий минус (GND) с Arduino и остальной проводкой.
+
+
+Рекомендации по эксплуатации:
+Охлаждение: MOSFET на пине D9 (обдув салона) будет нагружен — обязательно используй радиатор.
+Помехи: На линии W-Bus в авто много шумов. Используй экранированный провод или витую пару для стабильности.
+Защита: Если помпа подключена длинным проводом, добавь параллельно ей диод (катодом к "+"), чтобы обратный ток индуктивности не сжег реле или Ардуино.
+Прошивка: При загрузке скетча в Nano не забудь выбрать правильный процессор: ATmega328P или ATmega328P (Old Bootloader). 
+
+
+
+
+
 
 */
