@@ -217,7 +217,7 @@ IRF540N.
 
 
 bool canPumpActive = false;       // Статус помпы по CAN
-bool canTimeoutError = false;     // Флаг потери связи CAN
+bool canPumpTimeout = false;     // Флаг отсутствия сигнала работы помпы из CAN
 unsigned long lastCanPumpMsg = 0; // Таймер последнего пакета 0x20 0x08
 unsigned long lastBlink = 0;      // Таймер для мигания LED
 
@@ -229,7 +229,7 @@ void loop() {
       
       if (rxId == 0x3E5 && len >= 2) {
         if ((rxBuf[1] & 0x0A)) {
-          canTimeoutError = false; // Связь есть, сбрасываем ошибку таймаута
+          canPumpTimeout = false; // Сигнал на пуск помпы есть, сбрасываем таймаут
             canPumpActive = true;
             lastCanPumpMsg = millis(); // Обновляем время активности
           } else {
@@ -243,8 +243,8 @@ void loop() {
   // --- 2. ЗАЩИТА: ТАЙМАУТ СВЯЗИ CAN (5 секунд) ---
   if (canPumpActive && (millis() - lastCanPumpMsg > 5000)) {
     canPumpActive = false;
-    canTimeoutError = true; // Устанавливаем флаг ошибки связи
-    Serial.println("CRITICAL: CAN Link Lost!");
+    canPumpTimeout = true; // Устанавливаем флаг отсутствия сигнала работы помпы по CAN
+    Serial.println("Сигнал работы помпы из CAN отсутствует!");
   }
 
   // --- 3. УПРАВЛЕНИЕ РЕЛЕ ПОМПЫ ---
@@ -264,8 +264,8 @@ void loop() {
       lastBlink = millis();
     }
   } 
-  else if (canTimeoutError) {
-    // БЫСТРОЕ мерцание (100мс) - Потеря связи CAN
+  else if (canPumpTimeout) {
+    // БЫСТРОЕ мерцание (100мс) - Отсутствие сигнала работы помпы по CAN
     if (millis() - lastBlink > 100) {
       digitalWrite(ERR_LED, !digitalRead(ERR_LED));
       lastBlink = millis();
