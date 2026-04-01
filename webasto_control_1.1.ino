@@ -228,21 +228,20 @@ void loop() {
     if (CAN.readMsgBuf(&rxId, &len, rxBuf) == CAN_OK) {
       
       if (rxId == 0x3E5 && len >= 2) {
-        if (rxBuf[0] == 0x20) {
+        if ((rxBuf[1] & 0x0A)) {
           canTimeoutError = false; // Связь есть, сбрасываем ошибку таймаута
-          if (rxBuf[1] & 0x08) {
             canPumpActive = true;
             lastCanPumpMsg = millis(); // Обновляем время активности
           } else {
             canPumpActive = false; // Выключили штатно
-          }
+          
         }
       }
     }
   }
 
-  // --- 2. ЗАЩИТА: ТАЙМАУТ СВЯЗИ CAN (20 секунд) ---
-  if (canPumpActive && (millis() - lastCanPumpMsg > 20000)) {
+  // --- 2. ЗАЩИТА: ТАЙМАУТ СВЯЗИ CAN (5 секунд) ---
+  if (canPumpActive && (millis() - lastCanPumpMsg > 5000)) {
     canPumpActive = false;
     canTimeoutError = true; // Устанавливаем флаг ошибки связи
     Serial.println("CRITICAL: CAN Link Lost!");
