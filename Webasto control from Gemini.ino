@@ -71,7 +71,10 @@ void loop() {
   } 
   else {
     // АВАРИЙНЫЙ РЕЖИМ: Блокируем пуск, если помпа мертва
-    if (wbusPumpState) sendExtended((byte[]){0x21, 0x00}, 2);
+    if (wbusPumpState) {
+    byte stopCmd[] = {0x21, 0x00};
+    sendExtended(stopCmd, 2);
+}
     
     if (millis() - lastErrorBlink > 300) {
       digitalWrite(ERR_LED, !digitalRead(ERR_LED));
