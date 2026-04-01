@@ -213,6 +213,71 @@ FJN3303 — Тоже часто встречается в магазинах.
 IRFZ44N (самый частый гость на полках).
 IRF540N.
 
+//код анализа кан для включения помпы
+
+
+bool canPumpActive = false;       // Статус помпы по CAN
+bool canTimeoutError = false;     // Флаг потери связи CAN
+unsigned long lastCanPumpMsg = 0; // Таймер последнего пакета 0x20 0x08
+unsigned long lastBlink = 0;      // Таймер для мигания LED
+
+void loop() {
+  // --- 1. ПРИЕМ СООБЩЕНИЙ MCP2515 (CAN) ---
+  if (!digitalRead(CAN_INT)) { 
+    long unsigned int rxId; unsigned char len = 0; unsigned char rxBuf[8]; 
+    if (CAN.readMsgBuf(&rxId, &len, rxBuf) == CAN_OK) {
+      
+      if (rxId == 0x3E5 && len >= 2) {
+        if (rxBuf[0] == 0x20) {
+          canTimeoutError = false; // Связь есть, сбрасываем ошибку таймаута
+          if (rxBuf[1] & 0x08) {
+            canPumpActive = true;
+            lastCanPumpMsg = millis(); // Обновляем время активности
+          } else {
+            canPumpActive = false; // Выключили штатно
+          }
+        }
+      }
+    }
+  }
+
+  // --- 2. ЗАЩИТА: ТАЙМАУТ СВЯЗИ CAN (20 секунд) ---
+  if (canPumpActive && (millis() - lastCanPumpMsg > 20000)) {
+    canPumpActive = false;
+    canTimeoutError = true; // Устанавливаем флаг ошибки связи
+    Serial.println("CRITICAL: CAN Link Lost!");
+  }
+
+  // --- 3. УПРАВЛЕНИЕ РЕЛЕ ПОМПЫ ---
+  // Работает, если ХОТЯ БЫ ОДНА шина активна И нет аппаратной поломки (systemHalted)
+  if ((wbusPumpState || canPumpActive) && !systemHalted) {
+    digitalWrite(PUMP_RELAY, LOW); 
+    checkPumpHealth(); // Твоя защита по току ACS712
+  } else {
+    digitalWrite(PUMP_RELAY, HIGH);
+  }
+
+  // --- 4. ИНДИКАЦИЯ ОШИБОК ---
+  if (systemHalted) {
+    // МЕДЛЕННОЕ мигание (500мс) - Поломка помпы (Ток)
+    if (millis() - lastBlink > 500) {
+      digitalWrite(ERR_LED, !digitalRead(ERR_LED));
+      lastBlink = millis();
+    }
+  } 
+  else if (canTimeoutError) {
+    // БЫСТРОЕ мерцание (100мс) - Потеря связи CAN
+    if (millis() - lastBlink > 100) {
+      digitalWrite(ERR_LED, !digitalRead(ERR_LED));
+      lastBlink = millis();
+    }
+  } 
+  else {
+    digitalWrite(ERR_LED, LOW); // Ошибок нет
+  }
+
+  // ... (Опрос W-Bus и управление климатом 400Гц остаются ниже)
+}
 
 
 
