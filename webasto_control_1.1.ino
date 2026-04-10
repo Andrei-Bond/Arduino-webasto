@@ -95,7 +95,7 @@ void loop() {
   
     // Как только есть активность — планируем опрос W-Bus
     if (millis() - lastWBusQuery > 3000) {
-      sendWBus(0x05); 
+      sendWBusQuery(); 
       lastWBusQuery = millis();
     }
   }
@@ -198,13 +198,13 @@ float readAmps() {
   return abs(voltage - 2.5) / 0.185; 
 }
 
-void sendWBus(byte cmd) {
-  byte p[] = { 0xF4, 0x01, cmd };
-  wBus.write(p[0]); wBus.write(p[1]); wBus.write(p[2]);
-  wBus.write(p[0] ^ p[1] ^ p[2]);
+void sendWBusQuery() {
+  // Команда 0x05 (запрос состояния/температуры)
+  byte cmd[] = {0x05};
+  sendExtendedWBus(cmd, 1);
 }
 
-void sendExtended(byte* data, int len) {
+void sendExtendedWBus(byte* data, int len) {
   wBus.write(0xF4); wBus.write((byte)len);
   byte crc = 0xF4 ^ (byte)len;
   for(int i=0; i<len; i++) { wBus.write(data[i]); crc ^= data[i]; }
