@@ -21,9 +21,13 @@ CustomSoftwareSerial wBus(WBUS_RX, WBUS_TX);
 
 int coolantTemp = 0;
 bool wbusPumpState = false; 
-bool systemHalted = false;  
+bool pumpIsBroken = false;  
 unsigned long lastWBusQuery = 0;
-unsigned long lastErrorBlink = 0;
+
+bool canPumpActive = false;       // Статус помпы по CAN
+bool canPumpTimeout = false;     // Флаг отсутствия сигнала работы помпы из CAN
+unsigned long lastCanPumpMsg = 0; // Таймер последнего пакета помпы по КАН 0x20 0x08
+unsigned long lastBlink = 0;      // Таймер для мигания LED
 
 long unsigned int rxId; // хранилище ИД из CAN
 unsigned char len = 0; // хранилище длины данных из CAN
@@ -77,6 +81,17 @@ void loop() {
     CAN0.readMsgBuf(&rxId, &len, rxBuf);  // Считывем данные: len = длина данных, buf = байт(ы) данны
     CAN0.sendMsgBuf(0x427, 0, 8, askStat1);
   
+        if (rxId == 0x3E5 && len >= 2) {
+        if ((rxBuf[1] & 0x0A)) {
+          canPumpTimeout = false; // Сигнал на пуск помпы есть, сбрасываем таймаут
+            canPumpActive = true;
+            lastCanPumpMsg = millis(); // Обновляем время активности
+          } else {
+            canPumpActive = false; // Выключили штатно
+          
+        }
+      }
+  
     // Как только есть активность — планируем опрос W-Bus
     if (millis() - lastWBusQuery > 3000) {
       sendWBus(0x05); 
@@ -84,34 +99,54 @@ void loop() {
     }
   }
 
-  // --- 2. НЕБЛОКИРУЮЩЕЕ ЧТЕНИЕ W-BUS ---
-  checkWBusSerial(); 
+  // --- 2. ЗАЩИТА: ТАЙМАУТ СВЯЗИ CAN (5 секунд) ---
+  if (canPumpActive && (millis() - lastCanPumpMsg > 5000)) {
+    canPumpActive = false;
+    canPumpTimeout = true; // Устанавливаем флаг отсутствия сигнала работы помпы по CAN
+    Serial.println("Сигнал работы помпы из CAN отсутствует!");
+  }
 
-  // --- 3. ЛОГИКА БЕЗОПАСНОСТИ ---
-  if (!systemHalted) {
-    if (wbusPumpState) {
-      digitalWrite(PUMP_RELAY, LOW); 
-      checkPumpHealth();             
-    } else {
-      digitalWrite(PUMP_RELAY, HIGH);
-    }
-    manageClimate();
-  } 
-  else {
-    // АВАРИЙНЫЙ РЕЖИМ: Блокируем пуск, если помпа мертва
-    if (wbusPumpState) {
-    byte stopCmd[] = {0x21, 0x00};
-    sendExtended(stopCmd, 2);
-}
+  // --- 3. УПРАВЛЕНИЕ РЕЛЕ ПОМПЫ ---
+  // Работает, если ХОТЯ БЫ ОДНА шина активна И нет аппаратной поломки (pumpIsBroken)
+  if ((wbusPumpState || canPumpActive) && !pumpIsBroken) {
+    digitalWrite(PUMP_RELAY, LOW); 
+    checkPumpHealth(); // Твоя защита по току ACS712
+  } else {
+    digitalWrite(PUMP_RELAY, HIGH);
+  }
+  manageClimate();
+
+  // --- 4. ИНДИКАЦИЯ ОШИБОК ---
+  if (pumpIsBroken) {
     
-    if (millis() - lastErrorBlink > 300) {
-      digitalWrite(ERR_LED, !digitalRead(ERR_LED));
-      lastErrorBlink = millis();
-    }
     digitalWrite(PUMP_RELAY, HIGH);
     digitalWrite(CLIMATE_RELAY, HIGH);
     OCR1A = 0;
+    
+    if (wbusPumpState || canPumpActive) {
+    byte stopCmd[] = {0x21, 0x00};
+    sendExtended(stopCmd, 2);
+}
+    // МЕДЛЕННОЕ мигание (500мс) - Поломка помпы (Ток)
+    if (millis() - lastBlink > 500) {
+      digitalWrite(ERR_LED, !digitalRead(ERR_LED));
+      lastBlink = millis();
+    }
+  } 
+  else if (canPumpTimeout) {
+    // БЫСТРОЕ мерцание (100мс) - Отсутствие сигнала работы помпы по CAN
+    if (millis() - lastBlink > 100) {
+      digitalWrite(ERR_LED, !digitalRead(ERR_LED));
+      lastBlink = millis();
+    }
+  } 
+  else {
+    digitalWrite(ERR_LED, LOW); // Ошибок нет
   }
+
+  // --- 5. НЕБЛОКИРУЮЩЕЕ ЧТЕНИЕ W-BUS ---
+  checkWBusSerial(); 
+
 }
 
 // --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
@@ -151,7 +186,7 @@ void checkPumpHealth() {
   if (pTimer == 0) pTimer = millis();
   if (millis() - pTimer > 3000) {
     float amps = readAmps();
-    if (amps < 0.4 || amps > 3.0) systemHalted = true;
+    if (amps < 0.4 || amps > 3.0) pumpIsBroken = true;
   }
 }
 
@@ -163,14 +198,14 @@ float readAmps() {
 }
 
 void sendWBus(byte cmd) {
-  byte p[] = { 0x4F, 0x01, cmd };
+  byte p[] = { 0xF4, 0x01, cmd };
   wBus.write(p[0]); wBus.write(p[1]); wBus.write(p[2]);
   wBus.write(p[0] ^ p[1] ^ p[2]);
 }
 
 void sendExtended(byte* data, int len) {
-  wBus.write(0x4F); wBus.write((byte)len);
-  byte crc = 0x4F ^ (byte)len;
+  wBus.write(0xF4); wBus.write((byte)len);
+  byte crc = 0xF4 ^ (byte)len;
   for(int i=0; i<len; i++) { wBus.write(data[i]); crc ^= data[i]; }
   wBus.write(crc);
 }
