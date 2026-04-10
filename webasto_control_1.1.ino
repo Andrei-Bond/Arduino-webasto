@@ -126,7 +126,7 @@ void loop() {
     
     if (wbusPumpState || canPumpActive) {
     byte stopCmd[] = {0x21, 0x00};
-    sendExtended(stopCmd, 2);
+    sendExtendedWBus(stopCmd, 2);
 }
     // МЕДЛЕННОЕ мигание (500мс) - Поломка помпы (Ток)
     if (millis() - lastBlink > 500) {
