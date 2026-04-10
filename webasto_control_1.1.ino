@@ -57,7 +57,7 @@ void setup() {
   pinMode(CAN0_INT, INPUT); // Пин прерывания CAN
 
   // Выключаем всё (инверсная логика реле: HIGH = выкл)
-  digitalWrite(PUMP_RELAY, HIGH);   
+  digitalWrite(PUMP_RELAY, LOW);   
   digitalWrite(CLIMATE_RELAY, HIGH); 
   digitalWrite(ERR_LED, LOW);       // Ошибки нет
 
@@ -109,17 +109,17 @@ void loop() {
   // --- 3. УПРАВЛЕНИЕ РЕЛЕ ПОМПЫ ---
   // Работает, если ХОТЯ БЫ ОДНА шина активна И нет аппаратной поломки (pumpIsBroken)
   if ((wbusPumpState || canPumpActive) && !pumpIsBroken) {
-    digitalWrite(PUMP_RELAY, LOW); 
+    digitalWrite(PUMP_RELAY, HIGH); 
     checkPumpHealth(); // Твоя защита по току ACS712
   } else {
-    digitalWrite(PUMP_RELAY, HIGH);
+    digitalWrite(PUMP_RELAY, LOW);
   }
   manageClimate();
 
   // --- 4. ИНДИКАЦИЯ ОШИБОК ---
   if (pumpIsBroken) {
     
-    digitalWrite(PUMP_RELAY, HIGH);
+    digitalWrite(PUMP_RELAY, LOW);
     digitalWrite(CLIMATE_RELAY, HIGH);
     OCR1A = 0;
     
