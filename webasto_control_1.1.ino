@@ -64,7 +64,6 @@ void setup() {
   ICR1 = 4999; 
   OCR1A = 0; 
   
-  // Тут твоя инициализация CAN: CAN.begin(...);
 }
 
 
@@ -73,13 +72,11 @@ void setup() {
 void loop() {
   // --- 1. ЛОГИКА CAN (MCP2515) ---
   if (!digitalRead(CAN0_INT)) { 
-    // Читаем CAN, отвечаем котлу (твой код)
-     if(!digitalRead(CAN0_INT))          // Если вывод CAN0_INT is LOW, отправляем подтверждение связи
-  {   
+    // Читаем CAN, отвечаем котлу (твой код)          // Если вывод CAN0_INT is LOW, отправляем подтверждение связи
+     
     CAN0.readMsgBuf(&rxId, &len, rxBuf);  // Считывем данные: len = длина данных, buf = байт(ы) данны
     CAN0.sendMsgBuf(0x427, 0, 8, askStat1);
   
-}
     // Как только есть активность — планируем опрос W-Bus
     if (millis() - lastWBusQuery > 3000) {
       sendWBus(0x05); 
