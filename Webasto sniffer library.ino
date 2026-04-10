@@ -1,44 +1,51 @@
-#include <WBusLibrary.h>
+#include <WebastoHeaterWBus.h>
 #include <CustomSoftwareSerial.h>
 
-// Назначаем пины согласно твоему конфигу
+// Твои пины
 #define WBUS_RX 6
 #define WBUS_TX 7
 
-// Инициализируем CustomSoftwareSerial (8N1 по умолчанию)
+// Инициализируем программный порт
 CustomSoftwareSerial wBusSerial(WBUS_RX, WBUS_TX);
 
-// Передаем объект серийного порта в библиотеку W-Bus
-WBusLibrary wbus(&wBusSerial);
+// Передаем порт в библиотеку
+WebastoHeaterWBus wbus(&wBusSerial);
 
 void setup() {
-  // Скорость для монитора порта на ПК
+  // Монитор порта для отладки
   Serial.begin(115200);
   
-  // W-Bus работает на 10400 бод
+  // W-Bus всегда работает на 10400
   wBusSerial.begin(10400);
-  
-  Serial.println(F("--- Webasto W-Bus Sniffer (CustomSerial) ---"));
+
+  Serial.println(F("--- Webasto Touareg 2008 W-Bus Interface ---"));
 }
 
 void loop() {
-  // Пытаемся обновить данные из шины
+  // update() опрашивает котел и возвращает true, если данные получены
   if (wbus.update()) {
+    
     Serial.print(F("Status: "));
-    Serial.print(wbus.getStateString());
+    Serial.print(wbus.getStateString()); // Состояние (Heating, Purge и т.д.)
     
     Serial.print(F(" | Temp: "));
     Serial.print(wbus.getTemp());
-    Serial.print(F("°C"));
+    Serial.print(F("C"));
     
     Serial.print(F(" | Volt: "));
     Serial.print(wbus.getVoltage());
     Serial.println(F("V"));
-  } else {
-    // Если данных нет, просто ждем. 
-    // Периодически можно вызывать keepAlive(), если котел на столе.
-    // wbus.keepAlive();
+    
+    // Если нужно увидеть ошибки
+    if (wbus.getErrorCount() > 0) {
+      Serial.print(F("Errors found: "));
+      Serial.println(wbus.getErrorCount());
+    }
   }
 
-  delay(500); // Опрос дважды в секунду
+  // Для Touareg 2008 (VAG) критично поддерживать связь, 
+  // если котел запущен не штатно, иначе он уйдет в Standby
+  wbus.keepAlive();
+
+  delay(1000); // Опрос раз в секунду
 }
