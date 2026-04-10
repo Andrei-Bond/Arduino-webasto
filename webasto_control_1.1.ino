@@ -83,6 +83,7 @@ void loop() {
   
         if (rxId == 0x3E5 && len >= 2) {
         if ((rxBuf[1] & 0x0A)) {
+           Serial.println("КАН: помпа вкл")
           canPumpTimeout = false; // Сигнал на пуск помпы есть, сбрасываем таймаут
             canPumpActive = true;
             lastCanPumpMsg = millis(); // Обновляем время активности
