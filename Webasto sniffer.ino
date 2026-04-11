@@ -32,3 +32,43 @@ void loop() {
     // Для этого можно добавить проверку времени, но для начала хватит и просто потока.
   }
 }
+
+
+
+
+// Используем аппаратный Serial для W-bus (Pin 0 - RX)
+// ВНИМАНИЕ: При прошивке нужно отключать W-bus от пина 0!
+
+unsigned long lastByteTime = 0;
+const int packetTimeout = 20; // Пауза в мс, означающая конец пакета
+
+void setup() {
+  // Монитор порта (USB) - используем высокую скорость
+  Serial.begin(115200); 
+  
+  // Настройка порта для W-bus (2400 baud, 8 bits, Even parity, 1 stop bit)
+  // На Nano это перенастроит аппаратный RX/TX
+  Serial.begin(2400, SERIAL_8E1);
+  
+  Serial.println("\n--- W-bus Sniffer Started (2400 8E1) ---");
+}
+
+void loop() {
+  if (Serial.available()) {
+    uint8_t b = Serial.read();
+    unsigned long currentTime = millis();
+
+    // Если пауза между байтами большая — печатаем разделитель (новый пакет)
+    if (currentTime - lastByteTime > packetTimeout) {
+      Serial.println(); 
+      Serial.print("[Packet]: ");
+    }
+
+    // Выводим байт в формате HEX с ведущим нулем
+    if (b < 0x10) Serial.print("0");
+    Serial.print(b, HEX);
+    Serial.print(" ");
+
+    lastByteTime = currentTime;
+  }
+}
