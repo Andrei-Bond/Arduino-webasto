@@ -342,6 +342,147 @@ IRLZ44N (именно с буквой L).
 Подсказать, как правильно соединить L9637D и Ардуино, чтобы они не конфликтовали с сигнализацией на одной линии?
 
 
+#include <CustomSoftwareSerial.h> // Библиотека для работы с K-line на любых пинах
+
+#define WBUS_RX 6 // Пин Ардуино, куда приходит сигнал от Webasto
+#define WBUS_TX 7 // Пин Ардуино, который отправляет сигнал в Webasto
+
+CustomSoftwareSerial wBus(WBUS_RX, WBUS_TX); // Создаем объект "виртуального" порта
+
+// Глобальные переменные для хранения данных
+int tempCelsius = 0;    // Сюда сохраняем температуру
+float voltageVal = 13.0; // Сюда сохраняем напряжение
+bool pumpActive = false; // Флаг: работает ли помпа (true/false)
+bool isHeaterRunning = false; // Флаг: запущен ли котел в целом
+
+// Параметры защиты аккумулятора
+const float MIN_VOLTAGE = 11.5;         // Порог, ниже которого отключаем котел
+const unsigned long LOW_VOLT_TIMEOUT = 10000; // 10 сек (время ожидания перед отключением)
+unsigned long lowVoltStartTime = 0;     // Таймер: когда именно упало напряжение
+bool isVoltageLow = false;              // Флаг: находится ли вольтаж в опасной зоне сейчас
+
+// Тайминги работы шины
+unsigned long lastBusActivity = 0;  // Время последнего сообщения в линии (любого)
+unsigned long lastQueryTime = 0;    // Время, когда МЫ последний раз что-то спрашивали
+const unsigned long BUS_IDLE_TIME = 250; // Ждем 250мс тишины, чтобы не мешать другим (Starline)
+const unsigned long QUERY_INTERVAL = 1000; // Опрашиваем котел раз в 1 секунду
+
+byte currentQueryIndex = 0; // Номер текущего запроса из списка ниже
+byte queries[] = {0x05, 0x03, 0x02, 0x07}; // Список ID параметров: Темп, Помпа, Вольты, Ошибки
+
+byte rxBuf[24]; // Корзина (буфер), куда складываем приходящие байты
+byte rxIdx = 0;  // Счетчик: сколько байт уже лежит в корзине
+int echoSkip = 0; // Счетчик для удаления "эха" (своих же отправленных байт)
+
+
+
+void sendRawCommand(byte addr, byte len, byte cmd, byte id, byte p1 = 0xFF) {
+  byte pkt[8]; // Массив для сборки пакета
+  pkt[0] = addr; // Первый байт — адрес (обычно F4)
+  pkt[1] = len;  // Второй байт — длина данных
+  pkt[2] = cmd;  // Третий байт — команда (обычно 50)
+  pkt[3] = id;   // Четвертый байт — ID параметра
+  
+  int curr = 4;
+  if (p1 != 0xFF) pkt[curr++] = p1; // Если есть доп. параметр (минуты), добавляем его
+  
+  // Считаем контрольную сумму (CRC) методом XOR
+  byte crc = 0;
+  for (int i = 0; i < curr; i++) crc ^= pkt[i]; 
+  pkt[curr] = crc; // Записываем CRC в конец пакета
+
+  wBus.write(pkt, curr + 1); // Отправляем готовый пакет в провод W-bus
+  echoSkip = curr + 1;       // Помечаем, что эти байты вернутся к нам как эхо, их надо проигнорировать
+  lastQueryTime = millis();  // Запоминаем время отправки
+  lastBusActivity = millis(); // Считаем отправку тоже активностью на шине
+}
+
+void stopHeater(String reason) {
+  sendRawCommand(0xF4, 0x02, 0x50, 0x10); // Команда OFF (10)
+  Serial.print("!!! ACTION: STOP. Reason: "); Serial.println(reason); // Пишем причину в компьютер
+}
+
+
+
+void decodeMessage(byte* data, byte len) {
+  if (data[2] == 0xD0) { // Если 3-й байт равен D0 — это правильный ответ от котла
+    byte id = data[3]; // Смотрим, на какой именно ID пришел ответ
+    switch (id) {
+      case 0x05: // Пришел ответ на запрос температуры
+        tempCelsius = 110 - ((int)data[4] * 48 / 100); // Считаем градусы по твоей формуле
+        break;
+      case 0x03: // Пришел ответ по компонентам
+        pumpActive = (data[4] & 0x08); // Проверяем 3-й бит (помпа)
+        isHeaterRunning = pumpActive; // Если помпа крутит, значит процесс идет
+        break;
+      case 0x02: // Пришел ответ по напряжению
+        voltageVal = (float)data[4] * 0.079; // Считаем вольты
+        
+        // ЛОГИКА ЗАЩИТЫ
+        if (isHeaterRunning && voltageVal < MIN_VOLTAGE) { // Если запущен и напряжение упало
+          if (!isVoltageLow) { 
+            isVoltageLow = true; // Заметили просадку первый раз
+            lowVoltStartTime = millis(); // Включили секундомер
+            Serial.println("Warning: Low voltage detected, starting timer...");
+          } else if (millis() - lowVoltStartTime > LOW_VOLT_TIMEOUT) {
+            stopHeater("Battery Low (Critical Timeout)"); // Если 10 сек прошло — СТОП
+            isVoltageLow = false; 
+          }
+        } else {
+          isVoltageLow = false; // Напряжение поднялось — обнулили таймер защиты
+        }
+        break;
+    }
+  }
+}
+
+
+
+void loop() {
+  // Читаем команды из монитора порта (для ручного теста)
+  if (Serial.available()) {
+    char c = Serial.read();
+    if (c == '1') sendRawCommand(0xF4, 0x04, 0x50, 0x21, 30); // Если нажать 1 — пуск на 30 мин
+    if (c == '0') stopHeater("User command"); // Если нажать 0 — выключить
+  }
+
+  // СЛУШАЕМ ШИНУ W-BUS
+  while (wBus.available()) {
+    byte b = wBus.read();
+    lastBusActivity = millis(); // Фиксируем, что на шине кто-то говорит (мы или Starline)
+    
+    if (echoSkip > 0) { echoSkip--; continue; } // Если это наше эхо — просто выкидываем байт
+
+    // Ищем начало пакета (адрес 4F, 43 и т.д.)
+    if (rxIdx == 0 && (b & 0xF0) == 0x40) {
+      rxBuf[rxIdx++] = b;
+    } else if (rxIdx > 0) {
+      rxBuf[rxIdx++] = b; // Складываем байты в буфер
+      if (rxIdx > 1) {
+        byte expectedLen = rxBuf[1] + 2; // Вычисляем, сколько байт должно быть в пакете всего
+        if (rxIdx == expectedLen) { // Если пакет собрался целиком
+          byte crc = 0;
+          for (int i = 0; i < rxIdx - 1; i++) crc ^= rxBuf[i]; // Считаем CRC пришедшего пакета
+          if (crc == rxBuf[rxIdx - 1]) decodeMessage(rxBuf, rxIdx); // Если CRC совпал — расшифровываем
+          rxIdx = 0; // Чистим буфер для нового сообщения
+        }
+      }
+    }
+    if (rxIdx >= 24) rxIdx = 0; // Защита от переполнения корзины
+  }
+
+  // ОТПРАВЛЯЕМ СВОИ ЗАПРОСЫ
+  unsigned long now = millis();
+  // Если на шине тишина 250мс И прошел 1 сек с нашего последнего вопроса:
+  if (now - lastBusActivity > BUS_IDLE_TIME && now - lastQueryTime > QUERY_INTERVAL) {
+    sendRawCommand(0xF4, 0x03, 0x50, queries[currentQueryIndex]); // Шлем следующий запрос из очереди
+    currentQueryIndex = (currentQueryIndex + 1) % 4; // Переходим к следующему параметру (0->1->2->3->0)
+  }
+}
+
+
+
+
 
 
 
