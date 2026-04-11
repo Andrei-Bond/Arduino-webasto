@@ -8,11 +8,6 @@
 CustomSoftwareSerial wBusSerial(WBUS_RX, WBUS_TX);
 
 
-
-
-// Используем аппаратный Serial для W-bus (Pin 0 - RX)
-// ВНИМАНИЕ: При прошивке нужно отключать W-bus от пина 0!
-
 unsigned long lastByteTime = 0;
 const int packetTimeout = 20; // Пауза в мс, означающая конец пакета
 
