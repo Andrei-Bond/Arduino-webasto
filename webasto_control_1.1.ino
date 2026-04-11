@@ -15,7 +15,7 @@
 #define CURRENT_PIN  A0     
 #define CAN0_INT      2      // Прерывание MCP2515
 
-#define ADDR_HEATER  0x4F // Адресация: Таймер (F) -> Котел (4) w-bus
+//#define ADDR_HEATER  0xF4 // Адресация: Таймер (F) -> Котел (4) w-bus
 
 CustomSoftwareSerial wBus(WBUS_RX, WBUS_TX);
 
@@ -148,9 +148,17 @@ void loop() {
   // --- 5. НЕБЛОКИРУЮЩЕЕ ЧТЕНИЕ W-BUS ---
   checkWBusSerial(); 
 
+  // Пример управления через монитор порта: '1' - старт, '0' - стоп
+  if (Serial.available()) {
+    char c = Serial.read();
+    if (c == '1') startSystem(30); 
+    if (c == '0') stopWebasto();
+  }
+  
 }
 
 // --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
+
 
 void checkWBusSerial() {
   static byte buf[20];
@@ -164,9 +172,11 @@ void checkWBusSerial() {
   }
 
   if (idx > 0 && (millis() - timeout > 10)) {
-    if (idx > 7 && (buf[0] == 0x4F || buf[0] == 0xF4)) {
+    if (idx > 7 && (buf[0] == 0x4F)) {
       coolantTemp = buf[4] - 50;
+      Serial.println(coolantTemp);
       wbusPumpState = (buf[6] & 0x02) || (buf[6] & 0x01);
+      Serial.println(wbusPumpState);
     }
     idx = 0;
   }
@@ -196,6 +206,24 @@ float readAmps() {
   for(int i=0; i<10; i++) sum += analogRead(CURRENT_PIN);
   float voltage = (sum / 10.0 * 5.0) / 1024.0;
   return abs(voltage - 2.5) / 0.185; 
+}
+
+// --- ФУНКЦИИ УПРАВЛЕНИЯ W-bus ---
+  // Команда 0x21 (управление), 0x01 (старт), mins (время в минутах)
+void startSystem(byte mins) {
+  isRunning = true;
+  byte startData[] = {0x21, 0x01, mins};
+  sendExtendedWBus(startData, 3);
+  Serial.println("W-Bus: START sent");
+}
+
+  // Команда 0x21 (управление), 0x00 (выключить)
+  
+void stopSystem() {
+  isRunning = false;
+  byte stopData[] = {0x21, 0x00};
+  sendExtendedWBus(stopData, 2);
+  Serial.println("W-Bus: STOP sent");
 }
 
 void sendWBusQuery() {
