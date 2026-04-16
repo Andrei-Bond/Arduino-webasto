@@ -61,7 +61,7 @@ const unsigned long QUERY_INTERVAL = 1000; // Опрашиваем котел р
 byte currentQueryIndex = 0; // Номер текущего запроса из списка ниже
 byte queries[] = {0x05, 0x03, 0x02, 0x07}; // Список ID параметров: Темп, Помпа, Вольты, Ошибки
 
-byte rxBufWBus[24]; // Корзина (буфер), куда складываем приходящие байты
+byte rxBufWBus[13]; // Корзина (буфер), куда складываем приходящие байты
 byte rxIdxWBus = 0;  // Счетчик: сколько байт уже лежит в корзине
 int echoSkip = 0; // Счетчик для удаления "эха" (своих же отправленных байт)
 //
@@ -70,7 +70,7 @@ int echoSkip = 0; // Счетчик для удаления "эха" (своих
 
 bool canPumpActive = false;       // Статус помпы по CAN
 bool canPumpTimeout = false;     // Флаг отсутствия сигнала работы помпы из CAN
-bool startCommandAccepted = false; //флаг принятия команды на пуск
+// вероято уже лишнее bool startCommandAccepted = false; //флаг принятия команды на пуск
 unsigned long lastCanPumpMsg = 0; // Таймер последнего пакета помпы по КАН 0x20 0x08
 unsigned long lastBlink = 0;      // Таймер для мигания LED
 
@@ -218,12 +218,17 @@ void loop() {
         if (rxIdxWBus == expectedLen) { // Если пакет собрался целиком
           byte crc = 0;
           for (int i = 0; i < rxIdxWBus - 1; i++) crc ^= rxBufWBus[i]; // Считаем CRC пришедшего пакета
-          if (crc == rxBufWBus[rxIdxWBus - 1]) decodeMessage(rxBufWBus, rxIdxWBus); // Если CRC совпал — расшифровываем
+          if (crc == rxBufWBus[rxIdxWBus - 1]){ 
+            if (currentState != IDLE) {
+              checkWBusResponse(rxBufWBus[2]);
+            };
+            decodeMessage(rxBufWBus, rxIdxWBus); // Если CRC совпал — расшифровываем
           rxIdxWBus = 0; // Чистим буфер для нового сообщения
+          }
         }
       }
     }
-    if (rxIdxWBus >= 24) rxIdxWBus = 0; // Защита от переполнения корзины
+    if (rxIdxWBus >= 13) rxIdxWBus = 0; // Защита от переполнения корзины
   }
 
   // ОТПРАВЛЯЕМ СВОИ ЗАПРОСЫ
@@ -268,11 +273,12 @@ void decodeMessage(byte* data, byte len) {
     byte id = data[3]; // Смотрим, на какой именно ID пришел ответ
     switch (id) {
       case 0x05: // Пришел ответ на запрос температуры
-        tempCelsius = 110 - ((int)data[4] * 48 / 100); // Считаем градусы по твоей формуле
+        coolantTemp = map((int)data[4], 153, 204, 36, 10);
+        Serial.println(coolantTemp);
         break;
       case 0x03: // Пришел ответ по компонентам
         pumpActive = (data[4] & 0x08); // Проверяем 3-й бит (помпа)
-        isHeaterRunning = pumpActive; // Если помпа крутит, значит процесс идет
+        ///???isHeaterRunning = pumpActive; // Если помпа крутит, значит процесс идет
         break;
       case 0x02: // Пришел ответ по напряжению
         voltageVal = (float)data[4] * 0.079; // Считаем вольты
@@ -365,11 +371,10 @@ void executeStop() {
 
 // --- ГЛАВНЫЙ ОБРАБОТЧИК (ДИСПЕТЧЕР) ---
 
-void handleWBus() {
+void checkWBusResponse(byteCheck) {
 
   // Блок 1: Если мы ждем подтверждения команды (Start или Stop)
-  if (currentState != IDLE) {
-    if (checkWBusResponse()) {       // Если функция подтвердила получение нужного байта
+    if (expectedResponse == byteCheck) {       // Если получен нужный байт
       if (currentState == SENDING_START) isHeaterRunning = true;
       if (currentState == SENDING_STOP)  isHeaterRunning = false;
       currentState = IDLE;           // Команда принята, возвращаемся в покой
@@ -385,11 +390,9 @@ void handleWBus() {
         currentState = IDLE;         // Сдаемся и выходим в покой
       }
     }
-    return; // Пока идет работа с командой, опросы (Query) не выполняем
-  }
+  
 
   // Блок 2: Обычный опрос состояния (работает только в IDLE)
-  sendWBusQuery();
   
   /*
   if (now - lastQueryTime > QUERY_INTERVAL) {
@@ -400,21 +403,6 @@ void handleWBus() {
   }*/
 }
 
-// --- ФУНКЦИЯ ПРОВЕРКИ ОТВЕТА ---
-
-bool checkWBusResponse() {
-  // Предположим, SerialWBus — это ваш порт для работы с печкой
-  while (Serial.available() > 0) {   // Пока в буфере есть данные
-    byte incoming = Serial.read();   // Читаем байт
-    
-    // Если байт совпадает с ожидаемым (Команда + 0x80)
-    if (incoming == expectedResponse) {
-      return true;                   // Сообщаем об успехе
-    }
-  }
-  return false;                      // Если нужного байта пока нет
-}
-  
   
   
   
