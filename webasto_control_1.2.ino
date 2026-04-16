@@ -11,7 +11,7 @@
 #define FAN_PWM_PIN  9      // Таймер 1 (400 Гц)
 #define PUMP_RELAY   5      
 #define CLIMATE_RELAY 4     
-#define ERR_LED      A1     
+#define LED      A1     
 #define CURRENT_PIN  A0     
 #define CAN0_INT      2      // Прерывание MCP2515
 
@@ -54,13 +54,13 @@ void setup() {
   // Настройки для вентилятора, помпы и светодиода ошибки помпы
   pinMode(PUMP_RELAY, OUTPUT);
   pinMode(CLIMATE_RELAY, OUTPUT);
-  pinMode(ERR_LED, OUTPUT);
+  pinMode(LED, OUTPUT);
   pinMode(CAN0_INT, INPUT); // Пин прерывания CAN
 
   // Выключаем всё (инверсная логика реле: HIGH = выкл)
   digitalWrite(PUMP_RELAY, LOW);   
   digitalWrite(CLIMATE_RELAY, HIGH); 
-  digitalWrite(ERR_LED, LOW);       // Ошибки нет
+  digitalWrite(LED, LOW);       // Ошибки нет
 
   // Настройка Таймера 1 (400 Гц на D9)
   pinMode(FAN_PWM_PIN, OUTPUT);
@@ -130,19 +130,19 @@ void loop() {
 //}
     // МЕДЛЕННОЕ мигание (500мс) - Поломка помпы (Ток)
     if (millis() - lastBlink > 500) {
-      digitalWrite(ERR_LED, !digitalRead(ERR_LED));
+      digitalWrite(LED, !digitalRead(LED));
       lastBlink = millis();
     }
   } 
   else if (canPumpTimeout) {
     // БЫСТРОЕ мерцание (100мс) - Отсутствие сигнала работы помпы по CAN
     if (millis() - lastBlink > 100) {
-      digitalWrite(ERR_LED, !digitalRead(ERR_LED));
+      digitalWrite(LED, !digitalRead(LED));
       lastBlink = millis();
     }
   } 
   else {
-    digitalWrite(ERR_LED, LOW); // Ошибок нет
+    digitalWrite(LED, LOW); // Ошибок нет
   }
 
   // --- 5. НЕБЛОКИРУЮЩЕЕ ЧТЕНИЕ W-BUS ---
