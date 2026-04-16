@@ -228,8 +228,9 @@ void loop() {
 
   // ОТПРАВЛЯЕМ СВОИ ЗАПРОСЫ
   
-  sendWBusQuery();
+  
   handleWBus();
+  sendWBusQuery();
 }
 
 // --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
