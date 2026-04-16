@@ -26,6 +26,24 @@ bool pumpActive = false; // Флаг: работает ли помпа (true/fal
 bool pumpIsBroken = false;  
 bool isHeaterRunning = false; // Флаг: запущен ли котел в целом
 
+  // Состояния системы отправки команд w-bus
+// --- Глобальные переменные и настройки ---
+enum WBusState { IDLE, SENDING_START, SENDING_STOP }; // Состояния: Ожидание, Пуск, Стоп
+WBusState currentState = IDLE;       // Текущее состояние системы
+
+int retryCount = 0;                  // Счетчик попыток (до 5) отправки wbus
+unsigned long lastActionTime = 0;    // Таймер для отслеживания таймаута ответа wbus
+byte expectedResponse = 0;           // Байт, который мы ждем от Вебасто (Команда + 0x80)
+
+// Константы времени
+const unsigned long TIMEOUT = 500;   // Ждем ответ от печки 500мс
+
+
+//
+
+
+
+
 // Параметры защиты аккумулятора
 const float MIN_VOLTAGE = 11.5;         // Порог, ниже которого отключаем котел
 const unsigned long LOW_VOLT_TIMEOUT = 10000; // 10 сек (время ожидания перед отключением)
@@ -52,6 +70,7 @@ int echoSkip = 0; // Счетчик для удаления "эха" (своих
 
 bool canPumpActive = false;       // Статус помпы по CAN
 bool canPumpTimeout = false;     // Флаг отсутствия сигнала работы помпы из CAN
+bool startCommandAccepted = false; //флаг принятия команды на пуск
 unsigned long lastCanPumpMsg = 0; // Таймер последнего пакета помпы по КАН 0x20 0x08
 unsigned long lastBlink = 0;      // Таймер для мигания LED
 
@@ -100,6 +119,7 @@ void setup() {
 
 
 void loop() {
+  now = millis();
   // --- 1. ЛОГИКА CAN (MCP2515) ---
   if (!digitalRead(CAN0_INT)) { 
     // Читаем CAN, отвечаем котлу (твой код)          // Если вывод CAN0_INT is LOW, отправляем подтверждение связи
@@ -207,8 +227,9 @@ void loop() {
   }
 
   // ОТПРАВЛЯЕМ СВОИ ЗАПРОСЫ
-  now = millis();
+  
   sendWBusQuery();
+  handleWBus();
 }
 
 // --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
@@ -303,6 +324,111 @@ float readAmps() {
 
 // --- ФУНКЦИИ УПРАВЛЕНИЯ W-bus ---
   // Команда 0x21 (управление), 0x01 (старт), mins (время в минутах)
+  
+  
+
+
+
+void loop() {
+  handleWBus();                      // Основной диспетчер задач W-Bus
+}
+
+// --- ФУНКЦИИ УПРАВЛЕНИЯ (Вызываются извне, например по кнопке) ---
+
+void startSystem() {
+  if (currentState != IDLE) return;  // Если уже идет процесс, игнорируем новый вызов
+  retryCount = 0;                    // Сбрасываем счетчик для новой операции
+  currentState = SENDING_START;      // Переходим в режим запуска
+  executeStart();                    // Делаем первую попытку
+}
+
+void stopSystem(String reason) {
+  // Стоп имеет приоритет, поэтому не проверяем IDLE, а просто прерываем всё
+  retryCount = 0;
+  currentState = SENDING_STOP;
+  Serial.print("!!! ACTION: STOP. Reason: "); Serial.println(reason);
+  executeStop();                     // Делаем первую попытку стопа
+}
+
+// --- ФУНКЦИИ ФИЗИЧЕСКОЙ ОТПРАВКИ ---
+
+void executeStart() {
+  byte startData[] = {0x21, timeWorkWebasto};
+  sendExtendedWBus(startData, 2);    // Отправляем байты в шину
+  expectedResponse = 0x21 + 0x80;    // Ждем ответ 0xA1 (21+80)
+  lastActionTime = millis();         // Фиксируем время отправки
+  retryCount++;                      // Увеличиваем счетчик попыток
+}
+
+void executeStop() {
+  byte stopData[] = {0x10};
+  sendExtendedWBus(stopData, 1);    // Отправляем команду стоп
+  expectedResponse = 0x10 + 0x80;    // Ждем ответ 0x90 (10+80)
+  lastActionTime = millis();
+  retryCount++;
+}
+
+// --- ГЛАВНЫЙ ОБРАБОТЧИК (ДИСПЕТЧЕР) ---
+
+void handleWBus() {
+
+  // Блок 1: Если мы ждем подтверждения команды (Start или Stop)
+  if (currentState != IDLE) {
+    if (checkWBusResponse()) {       // Если функция подтвердила получение нужного байта
+      if (currentState == SENDING_START) isHeaterRunning = true;
+      if (currentState == SENDING_STOP)  isHeaterRunning = false;
+      currentState = IDLE;           // Команда принята, возвращаемся в покой
+      Serial.println("W-Bus: OK! Response received.");
+    } 
+    else if (now - lastActionTime > TIMEOUT) { // Если ответа нет дольше 500мс
+      if (retryCount < 5) {          // Если попытки еще остались
+        Serial.print("W-Bus: Retry #"); Serial.println(retryCount + 1);
+        if (currentState == SENDING_START) executeStart();
+        else executeStop();
+      } else {                       // Если все 5 попыток провалены
+        Serial.println("W-Bus: Error! No response after 5 attempts.");
+        currentState = IDLE;         // Сдаемся и выходим в покой
+      }
+    }
+    return; // Пока идет работа с командой, опросы (Query) не выполняем
+  }
+
+  // Блок 2: Обычный опрос состояния (работает только в IDLE)
+  sendWBusQuery();
+  
+  /*
+  if (now - lastQueryTime > QUERY_INTERVAL) {
+    byte queryData[] = {0x50, queries[currentQueryIndex]};
+    sendExtendedWBus(queryData, 2);  // Шлем запрос из очереди
+    currentQueryIndex = (currentQueryIndex + 1) % 4; // Листаем очередь 0-1-2-3
+    lastQueryTime = now;             // Сбрасываем таймер интервала
+  }*/
+}
+
+// --- ФУНКЦИЯ ПРОВЕРКИ ОТВЕТА ---
+
+bool checkWBusResponse() {
+  // Предположим, SerialWBus — это ваш порт для работы с печкой
+  while (Serial.available() > 0) {   // Пока в буфере есть данные
+    byte incoming = Serial.read();   // Читаем байт
+    
+    // Если байт совпадает с ожидаемым (Команда + 0x80)
+    if (incoming == expectedResponse) {
+      return true;                   // Сообщаем об успехе
+    }
+  }
+  return false;                      // Если нужного байта пока нет
+}
+  
+  
+  
+  
+  
+ /* 
+  
+  
+  
+  
 void startSystem() {
   isHeaterRunning = true;
  // byte startData[] = {0x21, 0x01, mins};
@@ -310,7 +436,7 @@ void startSystem() {
   sendExtendedWBus(startData, 2);
   Serial.println("W-Bus: START sent");
 }
-
+*/
   // Команда 0x21 (управление), 0x00 (выключить)
 /*  
 void stopSystem() {
@@ -320,13 +446,16 @@ void stopSystem() {
   Serial.println("W-Bus: STOP sent");
 }
 */
+
+
+/*
 void stopSystem(String reason) {
   byte stopData[] = {0x10};
   sendExtendedWBus(stopData, 1);
   //sendExtendedWBus(0x10, 0x02); // Команда OFF (10)
   Serial.print("!!! ACTION: STOP. Reason: "); Serial.println(reason); // Пишем причину в компьютер
 }
-
+*/
 
 /*
 void sendWBusQuery() {
