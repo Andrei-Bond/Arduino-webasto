@@ -171,7 +171,7 @@ void loop() {
     OCR1A = 0;
     
     //if (wbusPumpState || canPumpActive) {
-    //stopSystem("Сработка защиты");
+    //stopSystem("Сработка защиты по помпе");
 //}
     // МЕДЛЕННОЕ мигание (500мс) - Поломка помпы (Ток)
     if (millis() - lastBlink > 500) {
