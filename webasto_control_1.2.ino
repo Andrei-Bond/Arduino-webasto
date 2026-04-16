@@ -232,10 +232,8 @@ void loop() {
   }
 
   // ОТПРАВЛЯЕМ СВОИ ЗАПРОСЫ
-  
-  
-  handleWBus();
-  sendWBusQuery();
+
+  if  (isHeaterRunning) sendWBusQuery();
 }
 
 // --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
