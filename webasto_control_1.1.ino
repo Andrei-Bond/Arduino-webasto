@@ -398,8 +398,8 @@ const unsigned long QUERY_INTERVAL = 1000; // Опрашиваем котел р
 byte currentQueryIndex = 0; // Номер текущего запроса из списка ниже
 byte queries[] = {0x05, 0x03, 0x02, 0x07}; // Список ID параметров: Темп, Помпа, Вольты, Ошибки
 
-byte rxBuf[24]; // Корзина (буфер), куда складываем приходящие байты
-byte rxIdx = 0;  // Счетчик: сколько байт уже лежит в корзине
+byte rxBufWBus[24]; // Корзина (буфер), куда складываем приходящие байты
+byte rxIdxWBus = 0;  // Счетчик: сколько байт уже лежит в корзине
 int echoSkip = 0; // Счетчик для удаления "эха" (своих же отправленных байт)
 
 
@@ -482,21 +482,21 @@ void loop() {
     if (echoSkip > 0) { echoSkip--; continue; } // Если это наше эхо — просто выкидываем байт
 
     // Ищем начало пакета (адрес 4F, 43 и т.д.)
-    if (rxIdx == 0 && (b & 0xF0) == 0x40) {
-      rxBuf[rxIdx++] = b;
-    } else if (rxIdx > 0) {
-      rxBuf[rxIdx++] = b; // Складываем байты в буфер
-      if (rxIdx > 1) {
-        byte expectedLen = rxBuf[1] + 2; // Вычисляем, сколько байт должно быть в пакете всего
-        if (rxIdx == expectedLen) { // Если пакет собрался целиком
+    if (rxIdxWBus == 0 && (b & 0xF0) == 0x40) {
+      rxBufWBus[rxIdxWBus++] = b;
+    } else if (rxIdxWBus > 0) {
+      rxBufWBus[rxIdxWBus++] = b; // Складываем байты в буфер
+      if (rxIdxWBus > 1) {
+        byte expectedLen = rxBufWBus[1] + 2; // Вычисляем, сколько байт должно быть в пакете всего
+        if (rxIdxWBus == expectedLen) { // Если пакет собрался целиком
           byte crc = 0;
-          for (int i = 0; i < rxIdx - 1; i++) crc ^= rxBuf[i]; // Считаем CRC пришедшего пакета
-          if (crc == rxBuf[rxIdx - 1]) decodeMessage(rxBuf, rxIdx); // Если CRC совпал — расшифровываем
-          rxIdx = 0; // Чистим буфер для нового сообщения
+          for (int i = 0; i < rxIdxWBus - 1; i++) crc ^= rxBufWBus[i]; // Считаем CRC пришедшего пакета
+          if (crc == rxBufWBus[rxIdxWBus - 1]) decodeMessage(rxBufWBus, rxIdxWBus); // Если CRC совпал — расшифровываем
+          rxIdxWBus = 0; // Чистим буфер для нового сообщения
         }
       }
     }
-    if (rxIdx >= 24) rxIdx = 0; // Защита от переполнения корзины
+    if (rxIdxWBus >= 24) rxIdxWBus = 0; // Защита от переполнения корзины
   }
 
   // ОТПРАВЛЯЕМ СВОИ ЗАПРОСЫ

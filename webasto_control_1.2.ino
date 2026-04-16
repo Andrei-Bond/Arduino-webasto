@@ -1,13 +1,13 @@
 // Webasto CAN simulation + w-bus + pump relay + control pump
 
 #include <mcp_can.h>
-#include <CustomSoftwareSerial.h>
+#include <CustomSoftwareSerial.h> // Библиотека для работы с K-line на любых пинах
 #include <SPI.h>
 
 
 // --- ПИНЫ ---
-#define WBUS_RX      6
-#define WBUS_TX      7
+#define WBUS_RX      6  // Пин Ардуино, куда приходит сигнал от Webasto
+#define WBUS_TX      7 // Пин Ардуино, который отправляет сигнал в Webasto
 #define FAN_PWM_PIN  9      // Таймер 1 (400 Гц)
 #define PUMP_RELAY   5      
 #define CLIMATE_RELAY 4     
@@ -15,15 +15,40 @@
 #define CURRENT_PIN  A0     
 #define CAN0_INT      2      // Прерывание MCP2515
 
-//#define ADDR_HEATER  0xF4 // Адресация: Таймер (F) -> Котел (4) w-bus
-
-CustomSoftwareSerial wBus(WBUS_RX, WBUS_TX);
-
-int coolantTemp = 0;
+#define ADDR_TO_HEATER  0x24 // Адресация: Таймер (2) -> Котел (4) w-bus
+#define ADDR_FROM_HEATER  0x42 // Адресация: Котел (4) -> таймер (2) w-bus
+#define timeWorkWebasto 60  // сколько времени будет работать Вебасто, мин
+CustomSoftwareSerial wBus(WBUS_RX, WBUS_TX); // Создаем объект "виртуального" порта
+int coolantTemp = 0;   // Сюда сохраняем температуру
+float voltageVal = 13.0; // Сюда сохраняем напряжение
 bool wbusPumpState = false; 
+bool pumpActive = false; // Флаг: работает ли помпа (true/false)
 bool pumpIsBroken = false;  
-bool isRunning = false;
-unsigned long lastWBusQuery = 0;
+bool isHeaterRunning = false; // Флаг: запущен ли котел в целом
+
+// Параметры защиты аккумулятора
+const float MIN_VOLTAGE = 11.5;         // Порог, ниже которого отключаем котел
+const unsigned long LOW_VOLT_TIMEOUT = 10000; // 10 сек (время ожидания перед отключением)
+unsigned long lowVoltStartTime = 0;     // Таймер: когда именно упало напряжение
+bool isVoltageLow = false;              // Флаг: находится ли вольтаж в опасной зоне сейчас
+//
+
+// Тайминги работы шины w-bus
+unsigned long now // переменная хранения текущего врнмени для запросоы wBus
+unsigned long lastBusActivity = 0;  // Время последнего сообщения в линии (любого)
+unsigned long lastQueryTime = 0;    // Время, когда МЫ последний раз что-то спрашивали
+const unsigned long BUS_IDLE_TIME = 250; // Ждем 250мс тишины, чтобы не мешать другим (Starline)
+const unsigned long QUERY_INTERVAL = 1000; // Опрашиваем котел раз в 1 секунду
+
+byte currentQueryIndex = 0; // Номер текущего запроса из списка ниже
+byte queries[] = {0x05, 0x03, 0x02, 0x07}; // Список ID параметров: Темп, Помпа, Вольты, Ошибки
+
+byte rxBufWBus[24]; // Корзина (буфер), куда складываем приходящие байты
+byte rxIdxWBus = 0;  // Счетчик: сколько байт уже лежит в корзине
+int echoSkip = 0; // Счетчик для удаления "эха" (своих же отправленных байт)
+//
+
+// unsigned long lastWBusQuery = 0;
 
 bool canPumpActive = false;       // Статус помпы по CAN
 bool canPumpTimeout = false;     // Флаг отсутствия сигнала работы помпы из CAN
@@ -126,7 +151,7 @@ void loop() {
     OCR1A = 0;
     
     //if (wbusPumpState || canPumpActive) {
-    //stopSystem();
+    //stopSystem("Сработка защиты");
 //}
     // МЕДЛЕННОЕ мигание (500мс) - Поломка помпы (Ток)
     if (millis() - lastBlink > 500) {
@@ -146,21 +171,49 @@ void loop() {
   }
 
   // --- 5. НЕБЛОКИРУЮЩЕЕ ЧТЕНИЕ W-BUS ---
-  checkWBusSerial(); 
+  //checkWBusSerial(); 
 
   // Пример управления через монитор порта: '1' - старт, '0' - стоп
   if (Serial.available()) {
     char c = Serial.read();
-    if (c == '1') startSystem(60); 
-    if (c == '0') stopSystem();
+    if (c == '1') startSystem(); 
+    if (c == '0') stopSystem("Команда пользователя");
     if (c == '2') sendWBusQuery();
   }
   
+    // СЛУШАЕМ ШИНУ W-BUS
+  while (wBus.available()) {
+    byte b = wBus.read();
+    lastBusActivity = millis(); // Фиксируем, что на шине кто-то говорит (мы или Starline)
+    
+    if (echoSkip > 0) { echoSkip--; continue; } // Если это наше эхо — просто выкидываем байт
+
+    // Ищем начало пакета (адрес 4F, 43 и т.д.)
+    if (rxIdxWBus == 0 && (b & 0xF0) == 0x40) {
+      rxBufWBus[rxIdxWBus++] = b;
+    } else if (rxIdxWBus > 0) {
+      rxBufWBus[rxIdxWBus++] = b; // Складываем байты в буфер
+      if (rxIdxWBus > 1) {
+        byte expectedLen = rxBufWBus[1] + 2; // Вычисляем, сколько байт должно быть в пакете всего
+        if (rxIdxWBus == expectedLen) { // Если пакет собрался целиком
+          byte crc = 0;
+          for (int i = 0; i < rxIdxWBus - 1; i++) crc ^= rxBufWBus[i]; // Считаем CRC пришедшего пакета
+          if (crc == rxBufWBus[rxIdxWBus - 1]) decodeMessage(rxBufWBus, rxIdxWBus); // Если CRC совпал — расшифровываем
+          rxIdxWBus = 0; // Чистим буфер для нового сообщения
+        }
+      }
+    }
+    if (rxIdxWBus >= 24) rxIdxWBus = 0; // Защита от переполнения корзины
+  }
+
+  // ОТПРАВЛЯЕМ СВОИ ЗАПРОСЫ
+  now = millis();
+  sendWBusQuery();
 }
 
 // --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 
-
+/*
 void checkWBusSerial() {
   static byte buf[20];
   static int idx = 0;
@@ -186,6 +239,41 @@ void checkWBusSerial() {
     idx = 0;
   }
 }
+*/
+
+void decodeMessage(byte* data, byte len) {
+  if (data[2] == 0xD0) { // Если 3-й байт равен D0 — это правильный ответ от котла
+    byte id = data[3]; // Смотрим, на какой именно ID пришел ответ
+    switch (id) {
+      case 0x05: // Пришел ответ на запрос температуры
+        tempCelsius = 110 - ((int)data[4] * 48 / 100); // Считаем градусы по твоей формуле
+        break;
+      case 0x03: // Пришел ответ по компонентам
+        pumpActive = (data[4] & 0x08); // Проверяем 3-й бит (помпа)
+        isHeaterRunning = pumpActive; // Если помпа крутит, значит процесс идет
+        break;
+      case 0x02: // Пришел ответ по напряжению
+        voltageVal = (float)data[4] * 0.079; // Считаем вольты
+        
+        // ЛОГИКА ЗАЩИТЫ
+        if (isHeaterRunning && voltageVal < MIN_VOLTAGE) { // Если запущен и напряжение упало
+          if (!isVoltageLow) { 
+            isVoltageLow = true; // Заметили просадку первый раз
+            lowVoltStartTime = millis(); // Включили секундомер
+            Serial.println("Warning: Low voltage detected, starting timer...");
+          } else if (millis() - lowVoltStartTime > LOW_VOLT_TIMEOUT) {
+            stopHeater("Battery Low (Critical Timeout)"); // Если 10 сек прошло — СТОП
+            isVoltageLow = false; 
+          }
+        } else {
+          isVoltageLow = false; // Напряжение поднялось — обнулили таймер защиты
+        }
+        break;
+    }
+  }
+}
+
+
 
 void manageClimate() {
   if (coolantTemp > 40) {
@@ -215,23 +303,32 @@ float readAmps() {
 
 // --- ФУНКЦИИ УПРАВЛЕНИЯ W-bus ---
   // Команда 0x21 (управление), 0x01 (старт), mins (время в минутах)
-void startSystem(byte mins) {
-  isRunning = true;
+void startSystem() {
+  isHeaterRunning = true;
  // byte startData[] = {0x21, 0x01, mins};
-  byte startData[] = {0x21, mins};
+  byte startData[] = {0x21, timeWorkWebasto};
   sendExtendedWBus(startData, 2);
   Serial.println("W-Bus: START sent");
 }
 
   // Команда 0x21 (управление), 0x00 (выключить)
-  
+/*  
 void stopSystem() {
-  isRunning = false;
+  isHeaterRunning = false;
   byte stopData[] = {0x10};
   sendExtendedWBus(stopData, 1);
   Serial.println("W-Bus: STOP sent");
 }
+*/
+void stopSystem(String reason) {
+  byte stopData[] = {0x10};
+  sendExtendedWBus(stopData, 1);
+  //sendExtendedWBus(0x10, 0x02); // Команда OFF (10)
+  Serial.print("!!! ACTION: STOP. Reason: "); Serial.println(reason); // Пишем причину в компьютер
+}
 
+
+/*
 void sendWBusQuery() {
   // Команда 0x05 (запрос состояния/температуры)
   byte cmdTemp[] = {0x50, 0x05};
@@ -240,13 +337,48 @@ void sendWBusQuery() {
   byte cmdPump[] = {0x50, 0x03};
   sendExtendedWBus(cmdPump, 2);
 }
+*/
+
+void sendWBusQuery() {
+    // Если на шине тишина 250мс И прошел 1 сек с нашего последнего вопроса:
+  if (now - lastBusActivity > BUS_IDLE_TIME && now - lastQueryTime > QUERY_INTERVAL) {
+    sendExtendedWBus({0x50, queries[currentQueryIndex]}, 2); // Шлем следующий запрос из очереди
+    currentQueryIndex = (currentQueryIndex + 1) % 4; // Переходим к следующему параметру (0->1->2->3->0)
+  }
+}
 
 void sendExtendedWBus(byte* data, int len) {
-  wBus.write(0x24); wBus.write((byte)len+1);
-  byte crc = 0x24 ^ ((byte)len+1);
+  wBus.write(ADDR_TO_HEATER); wBus.write((byte)len+1);
+  byte crc = ADDR_TO_HEATER ^ ((byte)len+1);
   for(int i=0; i<len; i++) { wBus.write(data[i]); crc ^= data[i]; }
   wBus.write(crc);
+  echoSkip = len + 2;       // Помечаем, что эти байты вернутся к нам как эхо, их надо проигнорировать
+  lastQueryTime = millis();  // Запоминаем время отправки
+  lastBusActivity = millis(); // Считаем отправку тоже активностью на шине
 }
+/*
+void sendRawCommand(byte len, byte cmd, byte id, byte p1 = 0xFF) {
+  byte pkt[8]; // Массив для сборки пакета
+  pkt[0] = ADDR_TO_HEATER; // Первый байт — адрес (обычно F4)
+  pkt[1] = len;  // Второй байт — длина данных
+  pkt[2] = cmd;  // Третий байт — команда (обычно 50)
+  pkt[3] = id;   // Четвертый байт — ID параметра
+  
+  int curr = 4;
+  if (p1 != 0xFF) pkt[curr++] = p1; // Если есть доп. параметр (минуты), добавляем его
+  
+  // Считаем контрольную сумму (CRC) методом XOR
+  byte crc = 0;
+  for (int i = 0; i < curr; i++) crc ^= pkt[i]; 
+  pkt[curr] = crc; // Записываем CRC в конец пакета
+
+  wBus.write(pkt, curr + 1); // Отправляем готовый пакет в провод W-bus
+  echoSkip = curr + 1;       // Помечаем, что эти байты вернутся к нам как эхо, их надо проигнорировать
+  lastQueryTime = millis();  // Запоминаем время отправки
+  lastBusActivity = millis(); // Считаем отправку тоже активностью на шине
+}
+*/
+
 
 
 /*
