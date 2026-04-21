@@ -649,10 +649,107 @@ IRLZ44N (именно с буквой L).
 
 
 
+#include "OneButton.h"
 
+const int BUTTON_PIN = 3; 
+const int LED_PIN = A1;
 
+OneButton button(BUTTON_PIN, true);
 
+bool isTimerActive = false;
+unsigned long timerStartTime = 0;
+const unsigned long DELAY_TIME = 27000000; 
+bool isHeatingRunning = false; 
+bool pumpIsBroken = false; // Флаг ошибки помпы
 
+// Переменные для мигания
+int blinkCount = 0;           
+unsigned long lastBlinkMs = 0; 
+bool blinkState = false;      
 
+void setup() {
+  pinMode(LED_PIN, OUTPUT);
+  button.attachClick(handleClickLogic);
+  button.attachLongPressStop(handleLongPress);
+  button.setClickMs(400); 
+}
+
+void loop() {
+  button.tick();
+  checkTimer();
+  updateLedStatus();
+}
+
+void handleClickLogic() {
+  int clicks = button.getNumberClicks();
+  switch (clicks) {
+    case 1:
+      isTimerActive = true;
+      timerStartTime = millis();
+      break;
+    case 2:
+      isTimerActive = false;
+      startSystem();
+      break;
+    case 3:
+      blinkCount = 3;
+      deleteERR();
+      break;
+    case 4:
+      blinkCount = 4;
+      deleteBlock();
+      break;
+  }
+}
+
+void handleLongPress() {
+  isTimerActive = false;
+  stopSystem();
+  blinkCount = 1; 
+}
+
+void checkTimer() {
+  if (isTimerActive && (millis() - timerStartTime >= DELAY_TIME)) {
+    isTimerActive = false;
+    startSystem();
+  }
+}
+
+void updateLedStatus() {
+  unsigned long now = millis();
+
+  // 1. Подтверждение нажатий (самый высокий приоритет)
+  if (blinkCount > 0) {
+    if (now - lastBlinkMs >= 150) {
+      lastBlinkMs = now;
+      blinkState = !blinkState;
+      digitalWrite(LED_PIN, blinkState);
+      if (!blinkState) blinkCount--; 
+    }
+  }
+  // 2. Система запущена (горит постоянно)
+  else if (isHeatingRunning) {
+    digitalWrite(LED_PIN, HIGH);
+  } 
+  // 3. ОШИБКА: Частое моргание (например, 5 раз в секунду)
+  else if (pumpIsBroken) {
+    // Период 200мс (100мс включен / 100мс выключен)
+    digitalWrite(LED_PIN, (now / 100) % 2 == 0);
+  }
+  // 4. Работает таймер (медленное моргание 1 раз в 2 сек)
+  else if (isTimerActive) {
+    digitalWrite(LED_PIN, (now / 1000) % 2 == 0);
+  } 
+  // 5. Выключено
+  else {
+    digitalWrite(LED_PIN, LOW);
+  }
+}
+
+// Заглушки
+void startSystem() { isHeatingRunning = true; }
+void stopSystem()  { isHeatingRunning = false; }
+void deleteERR()   { /* Код W-bus */ }
+void deleteBlock() { /* Код W-bus */ }
 
 */
