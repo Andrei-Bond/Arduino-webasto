@@ -693,11 +693,12 @@ void handleClickLogic() {
       break;
     case 3:
       blinkCount = 3;
-      deleteERR();
+      deleteERR(); //сброс ошибок вебасто
+      pumpIsBroken = false;  //сброс ошибки помпы
       break;
     case 4:
       blinkCount = 4;
-      deleteBlock();
+      deleteBlock(); // снятие блокировки вебасто
       break;
   }
 }
