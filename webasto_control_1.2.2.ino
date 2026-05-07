@@ -272,8 +272,10 @@ void decodeMessage(byte* data, byte len) {
       case 0x05: // Пришел ответ на запрос температуры
         if (data[4] < 204) {
         coolantTemp = map((int)data[4], 153, 204, 36, 10);
-        } else {
+        } else if (data[4] < 234) {
         coolantTemp = map((int)data[4], 204, 234, 10, -20);
+        } else {
+        coolantTemp = map((int)data[4], 234, 240, -20, -35);
         }
         Serial.print("W-Bus. Температура: ");Serial.println(coolantTemp);
         voltageVal = ((float)data[5] * 0.0683); // Считаем вольты
@@ -316,12 +318,12 @@ void decodeMessage(byte* data, byte len) {
 }
 
 void manageClimate() {
-  if ((coolantTemp > 5) && isHeaterRunning) {
+  if ((coolantTemp > 35) && isHeaterRunning) {
     digitalWrite(CLIMATE_RELAY, HIGH);
-    OCR1A = 1500; // 30% от 4999
-  } else if (coolantTemp > 40) {
+    OCR1A = 3500; // 70% от 4999
+  } else if (coolantTemp > 5 && isHeaterRunning) {
     digitalWrite(CLIMATE_RELAY, HIGH);
-    OCR1A = 3500; // 70% от 4999  
+    OCR1A = 1500; // 30% от 4999  
   } else {
     digitalWrite(CLIMATE_RELAY, LOW);
     OCR1A = 0;
