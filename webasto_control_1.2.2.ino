@@ -266,10 +266,10 @@ void loop() {
                                       // --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 
 void decodeMessage(byte* data, byte len) {
-  if (data[2] == 0xD0) { // Если 3-й байт равен D0 — это правильный ответ от котла
+  if (data[2] == 0xD0) { // Если 3-й байт равен D0 — это правильный ответ от котла на запрос состояний
     byte id = data[3]; // Смотрим, на какой именно ID пришел ответ
     switch (id) {
-      case 0x05: // Пришел ответ на запрос температуры
+      case 0x05: // Пришел ответ на запрос температуры и напряжения
         if (data[4] < 204) {
         coolantTemp = map((int)data[4], 153, 204, 36, 10);
         } else if (data[4] < 234) {
@@ -301,19 +301,23 @@ void decodeMessage(byte* data, byte len) {
         }
         break;
     }
-  }
-  if (data[2] == 0xC4) { // Если 3-й байт равен C4 —  ответ от котла на поддержание работы
+  } else if (data[2] == 0xC4) { // Если 3-й байт равен C4 —  ответ от котла на поддержание работы
     byte id = data[3]; // Смотрим, на какой именно ID пришел ответ
     switch (id) {
       case 0x00: // Пришел ответ - котёл работает
         Serial.println("W-Bus. Котёл работает");
+        isHeaterRunning = true;
         break;
-      case 0xFF: // Пришел ответ по компонентам
+      case 0xFF: // Пришел ответ - котел не работает
         Serial.println("W-Bus. Котёл НЕ работает");
         isHeaterRunning = false;
         sendWBusDelERR();
         break;
     }
+  } else if (data[2] == 0xA1) { // Если 3-й байт равен A1 —  ответ от котла на команду запуска
+    isHeaterRunning = true;
+  } else if (data[2] == 0x90) { // Если 3-й байт равен 90 —  ответ от котла на команду стоп
+    isHeaterRunning = false;
   }
 }
 
