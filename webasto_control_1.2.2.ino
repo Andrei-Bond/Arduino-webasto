@@ -256,7 +256,7 @@ void loop() {
     sendWBusQuery();
   }
   //sendWBusQuery();
-    // Функции кнопrи и лампочки
+    // Функции кнопки и лампочки
     button.tick();
     checkTimer();
     updateLedStatus();
