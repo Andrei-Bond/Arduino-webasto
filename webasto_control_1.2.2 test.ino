@@ -218,7 +218,7 @@ void loop() {
     if (c == '2') sendWBusQuery();
     if (c == '3') sendWBusDelERR();
     if (c == '4') testClimate(0);
-    if (c > '5') testClimate(30);
+    if (c == '5') testClimate(30);
     if (c == '6') testClimate(70);
   }
  
