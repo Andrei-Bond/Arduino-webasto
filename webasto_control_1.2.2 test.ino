@@ -468,7 +468,7 @@ void checkWBusResponse(byte byteCheck) {
       if ((currentState == SENDING_START) || (currentState == SENDING_SUPPORT)) isHeaterRunning = true;
       if (currentState == SENDING_STOP)  isHeaterRunning = false;
       currentState = IDLE;           // Команда принята, возвращаемся в покой
-      //Serial.println("W-Bus: OK! Ответ получен.");
+      Serial.println("W-Bus: OK! Ответ получен.");
     } 
     else if (now - lastActionTime > TIMEOUT) { // Если ответа нет дольше 500мс
       if (retryCount < 5) {          // Если попытки еще остались
