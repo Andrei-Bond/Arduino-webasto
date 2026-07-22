@@ -120,9 +120,9 @@ void setup() {
 
   // Настройки для светодиода
   pinMode(LED_PIN, OUTPUT);
-  button.attachClick(handleClickLogic);
+  button.attachMultiClick(handleMultiClick)
   button.attachLongPressStop(handleLongPress);
-  button.setClickMs(400); 
+  //button.setClickMs(400); 
 
   // Выключаем всё
   digitalWrite(PUMP_RELAY, LOW);   
@@ -493,18 +493,21 @@ void checkWBusResponse(byte byteCheck) {
 }
                      // --- ФУНКЦИИ КНОПКИ И ЛАМПОЧКИ ---
 
-void handleClickLogic() {
+void handleMultiClick() {
   int clicks = button.getNumberClicks();
   switch (clicks) {
     case 1:
+    Serial.println("Нажата кнопка 1 раз");
       isTimerActive = true;
       timerStartTime = millis();
       break;
     case 2:
+    Serial.println("Нажата кнопка 2 раза");
       isTimerActive = false;
       startSystem();
       break;
     case 3:
+    Serial.println("Нажата кнопка 3 раза");
       blinkCount = 3;
       sendWBusDelERR(); //сброс ошибок вебасто
       pumpIsBroken = false;  //сброс ошибки помпы
@@ -513,6 +516,7 @@ void handleClickLogic() {
 }
 
 void handleLongPress() {
+  Serial.println("Нажата кнопка долгим нажатием");
   isTimerActive = false;
   stopSystem("По кнопке");
   blinkCount = 1; 
