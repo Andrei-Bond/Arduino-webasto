@@ -121,8 +121,8 @@ void setup() {
   // Настройки для светодиода
   pinMode(LED_PIN, OUTPUT);
   button.attachMultiClick(handleMultiClick)
-  button.attachLongPressStop(handleLongPress);
-  //button.setClickMs(400); 
+  button.attachLongPressStart(handleLongPress);
+  button.setClickMs(400); 
 
   // Выключаем всё
   digitalWrite(PUMP_RELAY, LOW);   

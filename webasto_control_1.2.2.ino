@@ -120,8 +120,8 @@ void setup() {
 
   // Настройки для светодиода
   pinMode(LED_PIN, OUTPUT);
-  button.attachClick(handleClickLogic);
-  button.attachLongPressStop(handleLongPress);
+  button.attachMultiClick(handleClickLogic);
+  button.attachLongPressStart(handleLongPress);
   button.setClickMs(400); 
 
   // Выключаем всё
@@ -474,6 +474,7 @@ void checkWBusResponse(byte byteCheck) {
 
 void handleClickLogic() {
   int clicks = button.getNumberClicks();
+  blinkCount = clicks; 
   switch (clicks) {
     case 1:
       isTimerActive = true;
@@ -484,7 +485,6 @@ void handleClickLogic() {
       startSystem();
       break;
     case 3:
-      blinkCount = 3;
       sendWBusDelERR(); //сброс ошибок вебасто
       pumpIsBroken = false;  //сброс ошибки помпы
       break;
