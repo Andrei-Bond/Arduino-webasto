@@ -550,7 +550,7 @@ void updateLedStatus() {
     digitalWrite(LED_PIN, (now / 100) % 2 == 0);
   }
   // 4. ОШИБКА: Нет сигнала помпы по CAN. Частое моргание (например, 5 раз в секунду)
-  else if (pumpIsBroken) {
+  else if (canPumpTimeout) {
     // Период 400мс (200мс включен / 200мс выключен)
     digitalWrite(LED_PIN, (now / 100) % 3 == 0);  
   }
