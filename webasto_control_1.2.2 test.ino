@@ -283,13 +283,7 @@ void decodeMessage(byte* data, byte len) {
         Serial.print("W-Bus. Температура: ");Serial.println(coolantTemp);
         voltageVal = ((float)data[5] * 0.0683); // Считаем вольты
         Serial.print("W-Bus. Напряжение: "); Serial.println(voltageVal);
-        break;
-      case 0x03: // Пришел ответ по компонентам
-        pumpActive = (data[4] & 0x08); // Проверяем 3-й бит (помпа)
-        if (pumpActive) Serial.println("W-Bus. Помпа вкл");
-        break;
-
-        // ЛОГИКА ЗАЩИТЫ
+                // ЛОГИКА ЗАЩИТЫ
         if (isHeaterRunning && voltageVal < MIN_VOLTAGE) { // Если запущен и напряжение упало
           if (!isVoltageLow) { 
             isVoltageLow = true; // Заметили просадку первый раз
@@ -302,6 +296,11 @@ void decodeMessage(byte* data, byte len) {
         } else {
           isVoltageLow = false; // Напряжение поднялось — обнулили таймер защиты
         }
+        break;
+        
+      case 0x03: // Пришел ответ по компонентам
+        pumpActive = (data[4] & 0x08); // Проверяем 3-й бит (помпа)
+        if (pumpActive) Serial.println("W-Bus. Помпа вкл");
         break;
     }
   } else if (data[2] == 0xC4) { // Если 3-й байт равен C4 —  ответ от котла на поддержание работы
