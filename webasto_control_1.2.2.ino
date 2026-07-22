@@ -43,7 +43,6 @@ WBusState currentState = IDLE;       // Текущее состояние сис
 
 
 int retryCount = 0;                  // Счетчик попыток (до 5) отправки wbus
-unsigned long lastActionTime = 0;    // Таймер для отслеживания таймаута ответа wbus
 byte expectedResponse = 0;           // Байт, который мы ждем от Вебасто (Команда + 0x80)
 
 // Константы времени
@@ -64,7 +63,7 @@ bool isVoltageLow = false;              // Флаг: находится ли в�
 
 // Тайминги работы шины w-bus
 unsigned long now; // переменная хранения текущего времени для запросов wBus
-unsigned long lastBusActivity = 0;  // Время последнего сообщения в линии (любого)
+unsigned long lastWBusActivity = 0;  // Время последнего сообщения в линии (любого)
 unsigned long lastQueryTime = 0;    // Время, когда МЫ последний раз что-то спрашивали
 
 unsigned long lastSupportTime = 0;    // Время, когда МЫ последний раз отправляли поддержку горения
@@ -222,7 +221,7 @@ void loop() {
     // СЛУШАЕМ ШИНУ W-BUS
   if (wBus.available()) {
     byte b = wBus.read();
-    lastBusActivity = millis(); // Фиксируем, что на шине кто-то говорит (мы или Starline)
+    lastWBusActivity = now; // Фиксируем, что на шине кто-то говорит (мы или Starline)
     
     // Ищем начало пакета (адрес 4F, 43 и т.д.)
     if (rxIdxWBus == 0 && (b & 0xF0) == 0x40) {
@@ -386,7 +385,6 @@ void executeStart() {
   byte startData[] = {0x21, timeWorkWebasto};
   sendExtendedWBus(startData, 2);    // Отправляем байты в шину
   expectedResponse = 0x21 + 0x80;    // Ждем ответ 0xA1 (21+80)
-  lastActionTime = now;         // Фиксируем время отправки
   retryCount++;                      // Увеличиваем счетчик попыток
 }
 
@@ -394,7 +392,6 @@ void executeSupport() {
   byte supportData[] = {0x44, 0x21, 0x00};
   sendExtendedWBus(supportData, 3);    // Отправляем байты в шину
   expectedResponse = 0x44 + 0x80;    // Ждем ответ 0xC4 (44+80)
-  lastActionTime = now;         // Фиксируем время отправки для любой активности
   lastSupportTime = now; // фиксируем время отправки для этой команды
   retryCount++;                      // Увеличиваем счетчик попыток
 }
@@ -403,7 +400,6 @@ void executeStop() {
   byte stopData[] = {0x10};
   sendExtendedWBus(stopData, 1);    // Отправляем команду стоп
   expectedResponse = 0x10 + 0x80;    // Ждем ответ 0x90 (10+80)
-  lastActionTime = now;
   retryCount++;
 }
 
@@ -419,7 +415,7 @@ void sendWBusDelERR() {
 
 void sendWBusQuery() {
     // Если на шине тишина 250мс И прошел 1 сек с нашего последнего вопроса:
-    if (now - lastBusActivity > BUS_IDLE_TIME && now - lastQueryTime > QUERY_INTERVAL) {
+    if (now - lastWBusActivity > BUS_IDLE_TIME && now - lastQueryTime > QUERY_INTERVAL) {
       uint8_t dataQuery[] = {0x50, queries[currentQueryIndex]};
       //uint8_t dataQuery[] = {0x50, 0x05};
       sendExtendedWBus(dataQuery, 2); // Шлем следующий запрос из очереди
@@ -433,8 +429,8 @@ void sendExtendedWBus(byte* data, int len) {
   byte crc = ADDR_TO_HEATER ^ ((byte)len+1);
   for(int i=0; i<len; i++) { wBus.write(data[i]); crc ^= data[i]; }
   wBus.write(crc);
-  lastQueryTime = millis();  // Запоминаем время отправки
-  lastBusActivity = millis(); // Считаем отправку тоже активностью на шине
+  lastQueryTime = now;  // Запоминаем время отправки
+  lastWBusActivity = now; // Считаем отправку тоже активностью на шине
 }
                     // --- ГЛАВНЫЙ ОБРАБОТЧИК (ДИСПЕТЧЕР) ---
 
@@ -447,7 +443,7 @@ void checkWBusResponse(byte byteCheck) {
       currentState = IDLE;           // Команда принята, возвращаемся в покой
       //Serial.println("W-Bus: OK! Ответ получен.");
     } 
-    else if (now - lastActionTime > TIMEOUT) { // Если ответа нет дольше 500мс
+    else if (now - lastWBusActivity > TIMEOUT) { // Если ответа нет дольше 500мс
       if (retryCount < 5) {          // Если попытки еще остались
         Serial.print("W-Bus: Попытка #"); Serial.println(retryCount + 1);
         if (currentState == SENDING_START) executeStart();
