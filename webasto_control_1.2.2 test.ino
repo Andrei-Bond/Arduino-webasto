@@ -495,6 +495,7 @@ void checkWBusResponse(byte byteCheck) {
 
 void handleMultiClick() {
   int clicks = button.getNumberClicks();
+  blinkCount = clicks; 
   switch (clicks) {
     case 1:
     Serial.println("Нажата кнопка 1 раз");
@@ -508,7 +509,6 @@ void handleMultiClick() {
       break;
     case 3:
     Serial.println("Нажата кнопка 3 раза");
-      blinkCount = 3;
       sendWBusDelERR(); //сброс ошибок вебасто
       pumpIsBroken = false;  //сброс ошибки помпы
       break;
