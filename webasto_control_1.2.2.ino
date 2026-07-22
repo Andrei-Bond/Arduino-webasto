@@ -74,7 +74,7 @@ const unsigned long QUERY_INTERVAL = 1000; // Опрашиваем котел р
 const unsigned long SUPPORT_INTERVAL = 5000; // Шлём сигнал на поддержание горения раз в 5 секунду (не более 15 сек?)
 
 byte currentQueryIndex = 0; // Номер текущего запроса из списка ниже
-byte queries[] = {0x05, 0x03, 0x07}; // Список ID параметров: Темп, Помпа, Вольты, Ошибки
+byte queries[] = {0x05, 0x03}; // Список ID параметров: Темп, Помпа, Вольты, Ошибки
 
 byte rxBufWBus[13]; // Корзина (буфер), куда складываем приходящие байты
 byte rxIdxWBus = 0;  // Счетчик: сколько байт уже лежит в корзине
@@ -423,7 +423,7 @@ void sendWBusQuery() {
       uint8_t dataQuery[] = {0x50, queries[currentQueryIndex]};
       //uint8_t dataQuery[] = {0x50, 0x05};
       sendExtendedWBus(dataQuery, 2); // Шлем следующий запрос из очереди
-      currentQueryIndex = (currentQueryIndex + 1) % 3; // Переходим к следующему параметру (0->1->2(->3)->0)
+      currentQueryIndex = (currentQueryIndex + 1) % 2; // Переходим к следующему параметру (0->1(->2->3)->0)
   }
 }
 
