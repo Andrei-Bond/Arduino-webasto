@@ -30,8 +30,7 @@ CustomSoftwareSerial wBus(WBUS_RX, WBUS_TX); // Создаем объект "в�
 
 int coolantTemp = 0;   // Сюда сохраняем температуру
 float voltageVal = 13.0; // Сюда сохраняем напряжение
-bool wbusPumpState = false; // Флаг сигнала работы помпы из W-Bus
-bool pumpActive = false; // Флаг: работает ли помпа (true/false)
+bool wbusPumpActive = false; // Флаг сигнала работы помпы из W-Bus
 bool pumpIsBroken = false;  // Флаг: сломана ли помпа (true/false
 bool isHeaterRunning = false; // Флаг: запущен ли котел в целом
 bool isTimerActive = false; // Флаг работы таймера запуска Вебасто
@@ -189,7 +188,7 @@ void loop() {
 
   // --- 3. УПРАВЛЕНИЕ РЕЛЕ ПОМПЫ И КЛИМАТОМ---
   // Работает, если ХОТЯ БЫ ОДНА шина активна И нет аппаратной поломки (pumpIsBroken)
-  if ((wbusPumpState || canPumpActive || isHeaterRunning)/* && !pumpIsBroken*/) {
+  if ((wbusPumpActive || canPumpActive || isHeaterRunning)/* && !pumpIsBroken*/) {
     digitalWrite(PUMP_RELAY, HIGH); 
     checkPumpHealth(); // Твоя защита по току ACS712
   } else {
@@ -205,7 +204,7 @@ void loop() {
     OCR1A = 0;
 
     // Защита котла от перегрева. Если помпа сломана, шлём котлу сигнал на стоп.
-    //if (wbusPumpState || canPumpActive || isHeaterRunning) {   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    //if (wbusPumpActive || canPumpActive || isHeaterRunning) {   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     //stopSystem("Сработка защиты по помпе");     !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 //}   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   }  
@@ -301,8 +300,8 @@ void decodeMessage(byte* data, byte len) {
         }
         break;
       case 0x03: // Пришел ответ по компонентам
-        pumpActive = (data[4] & 0x08); // Проверяем 3-й бит (помпа)
-//TTT        if (pumpActive) Serial.println("W-Bus. Помпа вкл");
+        wbusPumpActive = (data[4] & 0x08); // Проверяем 3-й бит (помпа)
+//TTT        if (wbusPumpActive) Serial.println("W-Bus. Помпа вкл");
         break;
     }
   } else if (data[2] == 0xC4) { // Если 3-й байт равен C4 —  ответ от котла на поддержание работы
@@ -359,7 +358,7 @@ void testClimate(int powerVent) {
 
 void checkPumpHealth() {
   static unsigned long pTimer = 0;
-  if (pTimer == 0) pTimer = millis();
+  if (pTimer == 0) pTimer = now();
   if (millis() - pTimer > 3000) {
     pTimer = millis(); // Сбрасываем таймер для следующего интервала
     float amps = readAmps();
