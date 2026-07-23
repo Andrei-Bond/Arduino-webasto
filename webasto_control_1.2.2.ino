@@ -369,9 +369,14 @@ void checkPumpHealth() {
 
 float readAmps() {
   long sum = 0;
-  for(int i=0; i<10; i++) sum += analogRead(CURRENT_PIN);
-  float voltage = (sum / 10.0 * 5.0) / 1024.0;
-  return abs(voltage - 2.5) / 0.185; 
+  for(int i = 0; i < 10; i++) sum += analogRead(CURRENT_PIN);
+  
+  // Опорное напряжение теперь 4.6V
+  float voltage = (sum * 4.6) / (1023.0 * 10.0);
+  
+  // Ноль тока сместился на 2.3V (4.6 / 2)
+  // Чувствительность упала до ~0.1702 V/A
+  return abs(voltage - 2.3) / 0.1702; 
 }
 
                               // --- ФУНКЦИИ УПРАВЛЕНИЯ W-bus ---
