@@ -1,6 +1,9 @@
 // Webasto CAN simulation + w-bus + pump relay + control pump
 // + corntrol climat + button & led
 
+
+//TTT - тестовые команды
+
 #include <mcp_can.h>
 #include <CustomSoftwareSerial.h> // Библиотека для работы с K-line на любых пинах
 #include <SPI.h>
@@ -102,9 +105,10 @@ void setup() {
   
   // Initialize MCP2515 running at 8MHz with a baudrate of 100kb/s and the masks and filters disabled.
   // ДИАГНОСТИКА. Эта же команда
-  if(CAN0.begin(MCP_ANY, CAN_100KBPS, MCP_8MHZ) == CAN_OK) Serial.println("MCP2515 Инициализирован успешно!");
+/*TTT  if(CAN0.begin(MCP_ANY, CAN_100KBPS, MCP_8MHZ) == CAN_OK) Serial.println("MCP2515 Инициализирован успешно!");
   else Serial.println("Ошибка инициализации MCP2515...");
-
+*/
+  CAN0.begin(MCP_ANY, CAN_100KBPS, MCP_8MHZ
   CAN0.setMode(MCP_NORMAL);   // Выбираем нормальный режим, чтобы разрешить отправку сообщений
 
   pinMode(CAN0_INT, INPUT);                            // Configuring pin for /INT input
@@ -152,18 +156,18 @@ void loop() {
   
         if (rxId == 0x3E5 && len >= 2) {
         if ((rxBuf[1] & 0x0A)) {
-           Serial.println("КАН: помпа вкл");
+//TTT         Serial.println("КАН: помпа вкл");
           canPumpTimeout = false; // Сигнал на пуск помпы есть, сбрасываем таймаут
             canPumpActive = true;
             lastCanPumpMsg = millis(); // Обновляем время активности
           } else {
-              Serial.println("КАН: помпа выкл штатно");
+//TTT              Serial.println("КАН: помпа выкл штатно");
             canPumpActive = false; // Выключили штатно
           
         }
       }
   
-    // Как только есть активность — планируем опрос W-Bus
+    //??? Как только есть активность — планируем опрос W-Bus
   //  if (millis() - lastWBusQuery > 3000) {
   //    sendWBusQuery(); 
    //   lastWBusQuery = millis();
@@ -180,12 +184,12 @@ void loop() {
   if (canPumpActive && (millis() - lastCanPumpMsg > 30000)) {
     canPumpActive = false;
     canPumpTimeout = true; // Устанавливаем флаг отсутствия сигнала работы помпы по CAN
-    Serial.println("Сигнал работы помпы из CAN отсутствует!");
+//TTT    Serial.println("Сигнал работы помпы из CAN отсутствует!");
   }
 
   // --- 3. УПРАВЛЕНИЕ РЕЛЕ ПОМПЫ И КЛИМАТОМ---
   // Работает, если ХОТЯ БЫ ОДНА шина активна И нет аппаратной поломки (pumpIsBroken)
-  if ((wbusPumpState || canPumpActive)/* && !pumpIsBroken*/) {
+  if ((wbusPumpState || canPumpActive || isHeaterRunning)/* && !pumpIsBroken*/) {
     digitalWrite(PUMP_RELAY, HIGH); 
     checkPumpHealth(); // Твоя защита по току ACS712
   } else {
@@ -201,7 +205,7 @@ void loop() {
     OCR1A = 0;
 
     // Защита котла от перегрева. Если помпа сломана, шлём котлу сигнал на стоп.
-    //if (wbusPumpState || canPumpActive || isHeatingRunning) {   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    //if (wbusPumpState || canPumpActive || isHeaterRunning) {   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     //stopSystem("Сработка защиты по помпе");     !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 //}   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   }  
@@ -210,14 +214,14 @@ void loop() {
   // --- 5. НЕБЛОКИРУЮЩЕЕ ЧТЕНИЕ W-BUS ---
 
   // Пример управления через монитор порта: '1' - старт, '0' - стоп
-  if (Serial.available()) {
+/*TTT  if (Serial.available()) {
     char c = Serial.read();
     if (c == '1') startSystem(); 
     if (c == '0') stopSystem("Команда пользователя");
     if (c == '2') sendWBusQuery();
     if (c == '3') sendWBusDelERR();
   }
- 
+*/ 
     // СЛУШАЕМ ШИНУ W-BUS
   if (wBus.available()) {
     byte b = wBus.read();
@@ -276,17 +280,17 @@ void decodeMessage(byte* data, byte len) {
         } else {
         coolantTemp = map((int)data[4], 234, 240, -20, -35);
         }
-        Serial.print("W-Bus. Температура: ");Serial.println(coolantTemp);
+//TTT        Serial.print("W-Bus. Температура: ");Serial.println(coolantTemp);
         voltageVal = ((float)data[5] * 0.0683); // Считаем вольты
-        Serial.print("W-Bus. Напряжение: "); Serial.println(voltageVal);
+//TTT        Serial.print("W-Bus. Напряжение: "); Serial.println(voltageVal);
                 // ЛОГИКА ЗАЩИТЫ
         if (isHeaterRunning && voltageVal < MIN_VOLTAGE) { // Если запущен и напряжение упало
           if (!isVoltageLow) { 
             isVoltageLow = true; // Заметили просадку первый раз
             lowVoltStartTime = millis(); // Включили секундомер
-            Serial.println("Warning: Low voltage detected, starting timer...");
+//TTT            Serial.println("Низкое напряжение! Запуск таймера.");
           } else if (millis() - lowVoltStartTime > LOW_VOLT_TIMEOUT) {
-            stopSystem("Bat.Low 10сек"); // Если 10 сек прошло — СТОП
+            stopSystem(/*TTT"Низкое напряжение 10сек"*/); // Если 10 сек прошло — СТОП
             isVoltageLow = false; 
           }
         } else {
@@ -295,18 +299,18 @@ void decodeMessage(byte* data, byte len) {
         break;
       case 0x03: // Пришел ответ по компонентам
         pumpActive = (data[4] & 0x08); // Проверяем 3-й бит (помпа)
-        if (pumpActive) Serial.println("W-Bus. Помпа вкл");
+//TTT        if (pumpActive) Serial.println("W-Bus. Помпа вкл");
         break;
     }
   } else if (data[2] == 0xC4) { // Если 3-й байт равен C4 —  ответ от котла на поддержание работы
     byte id = data[3]; // Смотрим, на какой именно ID пришел ответ
     switch (id) {
       case 0x00: // Пришел ответ - котёл работает
-        Serial.println("W-Bus. Котёл работает");
+//TTT        Serial.println("W-Bus. Котёл работает");
         isHeaterRunning = true;
         break;
       case 0xFF: // Пришел ответ - котел не работает
-        Serial.println("W-Bus. Котёл НЕ работает");
+//TTT        Serial.println("W-Bus. Котёл НЕ работает");
         isHeaterRunning = false;
         sendWBusDelERR();
         break;
@@ -335,8 +339,9 @@ void checkPumpHealth() {
   static unsigned long pTimer = 0;
   if (pTimer == 0) pTimer = millis();
   if (millis() - pTimer > 3000) {
+    pTimer = millis(); // Сбрасываем таймер для следующего интервала
     float amps = readAmps();
-    Serial.print("Ток помпы: "); Serial.println(amps);
+//TTT    Serial.print("Ток помпы: "); Serial.println(amps);
     if (amps < 0.4 || amps > 3.0) pumpIsBroken = true;
   }
 }
@@ -358,7 +363,7 @@ void startSystem() {
   retryCount = 0;                    // Сбрасываем счетчик для новой операции
   currentState = SENDING_START;      // Переходим в режим запуска
   executeStart();                    // Делаем первую попытку
-  Serial.println("!!! ACTION: START");
+//TTT  Serial.println("!!! Запуск Вебсто");
 }
 
 void supportHeating() {
@@ -366,16 +371,16 @@ void supportHeating() {
   retryCount = 0;                    // Сбрасываем счетчик для новой операции
   currentState = SENDING_SUPPORT;      // Переходим в режим запуска
   executeSupport();                    // Делаем первую попытку
-  Serial.println("!!! ACTION: SUPPORT");
+//TTT  Serial.println("!!! Поддержание работы Вебасто");
   }
 }
 
 
-void stopSystem(String reason) {
+void stopSystem(/*TTTString reason*/) {
   // Стоп имеет приоритет, поэтому не проверяем IDLE, а просто прерываем всё
   retryCount = 0;
   currentState = SENDING_STOP;
-  Serial.print("!!! ACTION: STOP. Reason: "); Serial.println(reason);
+//TTT  Serial.print("!!! Стоп Вебсто по причине: "); Serial.println(reason);
   executeStop();                     // Делаем первую попытку стопа
 }
 
@@ -425,7 +430,7 @@ void sendWBusQuery() {
 
 void sendExtendedWBus(byte* data, int len) {
   wBus.write(ADDR_TO_HEATER); wBus.write((byte)len+1);
-  Serial.println("отправка в бас");
+//TTT  Serial.println("Отправка команды в W-Bus");
   byte crc = ADDR_TO_HEATER ^ ((byte)len+1);
   for(int i=0; i<len; i++) { wBus.write(data[i]); crc ^= data[i]; }
   wBus.write(crc);
@@ -445,12 +450,12 @@ void checkWBusResponse(byte byteCheck) {
     } 
     else if (now - lastWBusActivity > TIMEOUT) { // Если ответа нет дольше 500мс
       if (retryCount < 5) {          // Если попытки еще остались
-        Serial.print("W-Bus: Попытка #"); Serial.println(retryCount + 1);
+//TTT        Serial.print("W-Bus: Попытка #"); Serial.println(retryCount + 1);
         if (currentState == SENDING_START) executeStart();
         else if (currentState == SENDING_SUPPORT) executeSupport();
         else executeStop();
       } else {                       // Если все 5 попыток провалены
-        Serial.println("W-Bus: Ошибка! Нет ответа после 5 попыток.");
+//TTT        Serial.println("W-Bus: Ошибка! Нет ответа после 5 попыток.");
         currentState = IDLE;         // Сдаемся и выходим в покой
       }
     }
@@ -478,7 +483,7 @@ void handleClickLogic() {
 
 void handleLongPress() {
   isTimerActive = false;
-  stopSystem("По кнопке");
+  stopSystem(/*TTT"По кнопке"*/);
   blinkCount = 1; 
 }
 
