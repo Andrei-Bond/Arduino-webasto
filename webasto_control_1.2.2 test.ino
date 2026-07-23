@@ -336,7 +336,6 @@ void manageClimate() {
 }
 // Тестовая функция запуска вентилятора климата
 void testClimate(int powerVent) {
-  void testClimate(int powerVent) {
   // Проверяем, входит ли число в диапазон от 1 до 100%
   if (powerVent >= 1 && powerVent <= 100) {
     digitalWrite(CLIMATE_RELAY, HIGH); // Включаем реле климата
@@ -349,8 +348,6 @@ void testClimate(int powerVent) {
     digitalWrite(CLIMATE_RELAY, LOW);  // Отключаем реле климата
     OCR1A = 0;                         // Обнуляем ШИМ-регистр
   }
-}
-
 }
 
 void checkPumpHealth() {

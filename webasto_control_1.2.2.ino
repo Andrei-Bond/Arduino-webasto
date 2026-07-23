@@ -220,6 +220,9 @@ void loop() {
     if (c == '0') stopSystem("Команда пользователя");
     if (c == '2') sendWBusQuery();
     if (c == '3') sendWBusDelERR();
+    if (c == '4') testClimate(0);
+    if (c == '5') testClimate(30);
+    if (c == '6') testClimate(70);
   }
 */ 
     // СЛУШАЕМ ШИНУ W-BUS
@@ -334,6 +337,25 @@ void manageClimate() {
     OCR1A = 0;
   }
 }
+
+// Тестовая функция запуска вентилятора климата
+/*TTT
+void testClimate(int powerVent) {
+  // Проверяем, входит ли число в диапазон от 1 до 100%
+  if (powerVent >= 1 && powerVent <= 100) {
+    digitalWrite(CLIMATE_RELAY, HIGH); // Включаем реле климата
+    
+    // Альтернативный вариант (ограничит максимум на 4999, если это предел таймера):
+    OCR1A = map(powerVent, 1, 100, 50, 4999);
+  } 
+  // Если передали 0 или любые другие числа вне диапазона 1-100
+  else {
+    digitalWrite(CLIMATE_RELAY, LOW);  // Отключаем реле климата
+    OCR1A = 0;                         // Обнуляем ШИМ-регистр
+  }
+}
+*/
+
 
 void checkPumpHealth() {
   static unsigned long pTimer = 0;
