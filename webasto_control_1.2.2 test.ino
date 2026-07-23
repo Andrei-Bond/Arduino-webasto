@@ -476,15 +476,6 @@ void checkWBusResponse(byte byteCheck) {
         currentState = IDLE;         // Сдаемся и выходим в покой
       }
     }
-  // Блок 2: Обычный опрос состояния (работает только в IDLE)
-  
-  /* ???????????????????????????????????????????
-  if (now - lastQueryTime > QUERY_INTERVAL) {
-    byte queryData[] = {0x50, queries[currentQueryIndex]};
-    sendExtendedWBus(queryData, 2);  // Шлем запрос из очереди
-    currentQueryIndex = (currentQueryIndex + 1) % 4; // Листаем очередь 0-1-2-3
-    lastQueryTime = now;             // Сбрасываем таймер интервала
-  }*/
 }
                      // --- ФУНКЦИИ КНОПКИ И ЛАМПОЧКИ ---
 
