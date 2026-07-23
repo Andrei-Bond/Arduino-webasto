@@ -359,8 +359,8 @@ void testClimate(int powerVent) {
 void checkPumpHealth() {
   static unsigned long pTimer = 0;
   if (pTimer == 0) pTimer = now();
-  if (millis() - pTimer > 3000) {
-    pTimer = millis(); // Сбрасываем таймер для следующего интервала
+  if (now() - pTimer > 3000) {
+    pTimer = now(); // Сбрасываем таймер для следующего интервала
     float amps = readAmps();
 //TTT    Serial.print("Ток помпы: "); Serial.println(amps);
     if (amps < 0.4 || amps > 3.0) pumpIsBroken = true;
